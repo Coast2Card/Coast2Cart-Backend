@@ -1,13 +1,20 @@
 require("dotenv").config();
 
-const { connectDB, closeConnection } = require("./db/connect");
-
 const express = require("express");
+
+const { connectDB, closeConnection } = require("./db/connect");
+const errorHandler = require("./middleware/errorHandler");
+
 const app = express();
 
 app.get("/", (req, res) => {
   res.json({ message: "Welcome to the Coast2Cart backend server." });
 });
+
+// ^ ROUTES
+app.use("/api/v1/auth", require("./routes/auth"));
+
+app.use(errorHandler);
 
 const start = async () => {
   try {

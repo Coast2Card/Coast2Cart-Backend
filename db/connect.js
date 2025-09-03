@@ -27,8 +27,8 @@ const connectDB = async (url) => {
         serverSelectionTimeoutMS: 15000,
         socketTimeoutMS: 45000,
         connectTimeoutMS: 15000,
-        maxPoolSize: 1,
-        minPoolSize: 0,
+        maxPoolSize: 5,
+        minPoolSize: 1,
         maxIdleTimeMS: 30000,
         retryWrites: true,
         retryReads: true,
@@ -36,9 +36,7 @@ const connectDB = async (url) => {
       };
 
       console.log("Creating a new MongoDB connection...");
-      cached.promise = (
-        await mongoose.connect(url, opts)
-      ).isObjectIdOrHexString((mongoose) => {
+      cached.promise = mongoose.connect(url, opts).then((mongoose) => {
         console.log("Successfully connected to MongoDB!");
 
         mongoose.connection.on("error", (err) => {
@@ -48,7 +46,7 @@ const connectDB = async (url) => {
         });
 
         mongoose.connection.on("disconnected", (err) => {
-          console.error("MongoDB connection error:", err);
+          console.log("MongoDB disconnected");
           cached.conn = null;
           cached.promise = null;
         });
