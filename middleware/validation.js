@@ -197,6 +197,120 @@ const validateLogin = [
   handleValidationErrors,
 ];
 
+/**
+ * Validation rules for item creation
+ */
+const validateItemCreation = [
+  body("itemType")
+    .trim()
+    .notEmpty()
+    .withMessage("Item type is required")
+    .isIn(["fish", "souvenirs", "food"])
+    .withMessage("Item type must be 'fish', 'souvenirs', or 'food'"),
+
+  body("itemName")
+    .trim()
+    .notEmpty()
+    .withMessage("Item name is required")
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Item name must be between 2 and 100 characters"),
+
+  body("itemPrice")
+    .isFloat({ min: 0.01 })
+    .withMessage("Item price must be a positive number greater than 0"),
+
+  body("quantity")
+    .isFloat({ min: 0 })
+    .withMessage("Quantity must be a non-negative number"),
+
+  body("unit")
+    .trim()
+    .notEmpty()
+    .withMessage("Unit is required")
+    .isIn(["kg", "pieces", "lbs", "grams"])
+    .withMessage("Unit must be 'kg', 'pieces', 'lbs', or 'grams'"),
+
+  body("description")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Description cannot exceed 500 characters"),
+
+  body("location")
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage("Location cannot exceed 100 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Validation rules for item update
+ */
+const validateItemUpdate = [
+  body("itemType")
+    .optional()
+    .trim()
+    .isIn(["fish", "souvenirs", "food"])
+    .withMessage("Item type must be 'fish', 'souvenirs', or 'food'"),
+
+  body("itemName")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Item name must be between 2 and 100 characters"),
+
+  body("itemPrice")
+    .optional()
+    .isFloat({ min: 0.01 })
+    .withMessage("Item price must be a positive number greater than 0"),
+
+  body("quantity")
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage("Quantity must be a non-negative number"),
+
+  body("unit")
+    .optional()
+    .trim()
+    .isIn(["kg", "pieces", "lbs", "grams"])
+    .withMessage("Unit must be 'kg', 'pieces', 'lbs', or 'grams'"),
+
+  body("description")
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage("Description cannot exceed 500 characters"),
+
+  body("location")
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage("Location cannot exceed 100 characters"),
+
+  handleValidationErrors,
+];
+
+/**
+ * Validation rules for selling an item
+ */
+const validateSellItem = [
+  body("quantitySold")
+    .isFloat({ min: 0.01 })
+    .withMessage("Quantity sold must be a positive number greater than 0"),
+
+  body("buyerId").isMongoId().withMessage("Valid buyer ID is required"),
+
+  body("notes")
+    .optional()
+    .trim()
+    .isLength({ max: 200 })
+    .withMessage("Notes cannot exceed 200 characters"),
+
+  handleValidationErrors,
+];
+
 module.exports = {
   validateBuyerSignup,
   checkUsernameUnique,
@@ -204,5 +318,8 @@ module.exports = {
   checkContactUnique,
   validateOTP,
   validateLogin,
+  validateItemCreation,
+  validateItemUpdate,
+  validateSellItem,
   handleValidationErrors,
 };

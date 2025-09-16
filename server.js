@@ -28,6 +28,8 @@ app.get("/", (req, res) => {
 
 // ^ ROUTES
 app.use("/api/auth", require("./routes/auth"));
+app.use("/api/items", require("./routes/items"));
+app.use("/api/cart", require("./routes/cart"));
 
 app.use(errorHandler);
 
