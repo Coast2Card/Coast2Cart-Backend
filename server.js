@@ -1,18 +1,33 @@
 require("dotenv").config();
 
 const express = require("express");
+const cors = require("cors");
 
 const { connectDB, closeConnection } = require("./db/connect");
 const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
 
+// Middleware
+app.use(
+  cors({
+    origin:
+      process.env.NODE_ENV === "production"
+        ? ["https://your-frontend-domain.com"]
+        : ["http://localhost:5173", "http://localhost:3000"],
+    credentials: true,
+  })
+);
+
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true }));
+
 app.get("/", (req, res) => {
   res.json({ message: "Welcome to the Coast2Cart backend server." });
 });
 
 // ^ ROUTES
-app.use("/api/v1/auth", require("./routes/auth"));
+app.use("/api/auth", require("./routes/auth"));
 
 app.use(errorHandler);
 

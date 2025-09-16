@@ -5,22 +5,40 @@ const Schema = mongoose.Schema;
 
 const accountSchema = new Schema(
   {
+    firstName: {
+      type: String,
+      required: [true, "Please provide a first name"],
+      trim: true,
+    },
+    lastName: {
+      type: String,
+      required: [true, "Please provide a last name"],
+      trim: true,
+    },
     username: {
       type: String,
       required: [true, "Please provide a username"],
+      unique: true,
+      trim: true,
+      lowercase: true,
     },
-    date_of_birth: {
+    dateOfBirth: {
       type: Date,
-      required: [true, "Please provide a birthdate."],
+      required: [true, "Please provide a birthdate"],
+    },
+    contactNo: {
+      type: String,
+      required: [true, "Please provide a contact number"],
+      unique: true,
+      match: [
+        /^9\d{9}$/,
+        "Please provide a valid Philippine phone number starting with 9",
+      ],
     },
     address: {
       type: String,
-      required: [true, "Please provide an address."],
-    },
-    phone_number: {
-      type: String,
-      required: [true, "Please provide a phone number"],
-      match: [/^\+?[\d\s-()]+$/, "Please provide a valid phone number"],
+      required: [true, "Please provide an address"],
+      trim: true,
     },
     email: {
       type: String,
@@ -35,7 +53,15 @@ const accountSchema = new Schema(
     password: {
       type: String,
       required: [true, "Please provide a password"],
-      minLength: 8,
+      minLength: [8, "Password must be at least 8 characters long"],
+    },
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    otp: {
+      code: String,
+      expiresAt: Date,
     },
     role: {
       type: String,
@@ -62,6 +88,22 @@ accountSchema.pre("save", async function (next) {
 
 accountSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
+};
+
+accountSchema.methods.isAdult = function () {
+  const today = new Date();
+  const birthDate = new Date(this.dateOfBirth);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+
+  if (
+    monthDiff < 0 ||
+    (monthDiff === 0 && today.getDate() < birthDate.getDate())
+  ) {
+    age--;
+  }
+
+  return age >= 18;
 };
 
 module.exports = mongoose.model("Account", accountSchema);
