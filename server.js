@@ -22,11 +22,11 @@ app.use(
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/", (req, res) => {
+app.get("/", async (req, res) => {
   const mongoose = require("mongoose");
 
   // Get database connection status
-  const dbStatus = mongoose.connection.readyState;
+  let dbStatus = mongoose.connection.readyState;
   const dbStatusText = {
     0: "disconnected",
     1: "connected",
@@ -34,16 +34,18 @@ app.get("/", (req, res) => {
     3: "disconnecting",
   };
 
-  // Try to establish connection if not connected
-  if (dbStatus === 0 && process.env.MONGODB_URI) {
-    console.log("Attempting to connect to MongoDB...");
-    mongoose
-      .connect(process.env.MONGODB_URI, {
-        serverSelectionTimeoutMS: 5000,
-      })
-      .catch((err) => {
-        console.error("MongoDB connection attempt failed:", err.message);
-      });
+  // For serverless environments, ensure connection is established
+  if (dbStatus !== 1 && process.env.MONGODB_URI) {
+    console.log("Ensuring MongoDB connection...");
+    try {
+      // Use the existing connectDB function for consistency
+      const { connectDB } = require("./db/connect");
+      await connectDB(process.env.MONGODB_URI);
+      dbStatus = mongoose.connection.readyState;
+      console.log("MongoDB connection verified!");
+    } catch (err) {
+      console.error("MongoDB connection failed:", err.message);
+    }
   }
 
   res.json({
@@ -85,9 +87,15 @@ app.use(errorHandler);
 
 const start = async () => {
   try {
+    console.log("Starting server...");
+    console.log("MONGODB_URI exists:", !!process.env.MONGODB_URI);
+
     await connectDB(process.env.MONGODB_URI);
+    console.log("Database connection established successfully!");
+
     const server = app.listen(process.env.PORT, () => {
       console.log(`Server is running on port ${process.env.PORT}`);
+      console.log("Server startup completed successfully!");
     });
 
     server.on("error", (error) => {

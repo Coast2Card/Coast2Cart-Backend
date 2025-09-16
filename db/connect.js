@@ -24,15 +24,16 @@ const connectDB = async (url) => {
     if (!cached.promise) {
       const opts = {
         bufferCommands: false,
-        serverSelectionTimeoutMS: 15000,
+        serverSelectionTimeoutMS: 30000,
         socketTimeoutMS: 45000,
-        connectTimeoutMS: 15000,
-        maxPoolSize: 5,
+        connectTimeoutMS: 30000,
+        maxPoolSize: 10,
         minPoolSize: 1,
         maxIdleTimeMS: 30000,
         retryWrites: true,
         retryReads: true,
         heartbeatFrequencyMS: 10000,
+        maxConnecting: 2,
       };
 
       console.log("Creating a new MongoDB connection...");
