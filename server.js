@@ -34,12 +34,26 @@ app.get("/", (req, res) => {
     3: "disconnecting",
   };
 
+  // Try to establish connection if not connected
+  if (dbStatus === 0 && process.env.MONGODB_URI) {
+    console.log("Attempting to connect to MongoDB...");
+    mongoose
+      .connect(process.env.MONGODB_URI, {
+        serverSelectionTimeoutMS: 5000,
+      })
+      .catch((err) => {
+        console.error("MongoDB connection attempt failed:", err.message);
+      });
+  }
+
   res.json({
     message: "Coast2Cart Backend Server",
     status: "running",
     database: {
       status: dbStatusText[dbStatus] || "unknown",
       connected: dbStatus === 1,
+      readyState: dbStatus,
+      hasUri: !!process.env.MONGODB_URI,
     },
   });
 });
