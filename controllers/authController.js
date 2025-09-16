@@ -122,7 +122,75 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
 });
 
 /**
- * Buyer Login
+ * General Login (for all account types: buyer, seller, admin)
+ */
+const login = asyncErrorHandler(async (req, res) => {
+  const { identifier, password } = req.body;
+
+  // Find account by username, email, or contact number
+  const account = await Account.findOne({
+    $or: [
+      { username: identifier.toLowerCase() },
+      { email: identifier.toLowerCase() },
+      { contactNo: identifier },
+    ],
+  });
+
+  if (!account) {
+    throw new UnauthenticatedError("Invalid credentials");
+  }
+
+  // Check if account is verified (required for all account types)
+  if (!account.isVerified) {
+    throw new UnauthenticatedError(
+      "Account not verified. Please verify your phone number first."
+    );
+  }
+
+  const isPasswordCorrect = await account.comparePassword(password);
+
+  if (!isPasswordCorrect) {
+    throw new UnauthenticatedError("Invalid credentials");
+  }
+
+  // Generate JWT token
+  const token = generateToken(account._id);
+
+  // Prepare user data based on account type
+  const userData = {
+    id: account._id,
+    firstName: account.firstName,
+    lastName: account.lastName,
+    username: account.username,
+    email: account.email,
+    contactNo: account.contactNo,
+    role: account.role,
+    isVerified: account.isVerified,
+  };
+
+  // Add role-specific data
+  if (account.role === "buyer") {
+    userData.address = account.address;
+    userData.dateOfBirth = account.dateOfBirth;
+  }
+  // Add more role-specific fields as needed for seller/admin
+
+  res.status(200).json({
+    success: true,
+    message: "Login successful",
+    data: {
+      token,
+      user: userData,
+    },
+  });
+
+  console.log(
+    `${account.role} ${account.username} has successfully logged in.`
+  );
+});
+
+/**
+ * Buyer Login (specific for buyer accounts)
  */
 const buyerLogin = asyncErrorHandler(async (req, res) => {
   const { identifier, password } = req.body;
@@ -140,10 +208,16 @@ const buyerLogin = asyncErrorHandler(async (req, res) => {
     throw new UnauthenticatedError("Invalid credentials");
   }
 
+  // Check if account is verified
   if (!account.isVerified) {
     throw new UnauthenticatedError(
       "Account not verified. Please verify your phone number first."
     );
+  }
+
+  // Check if account is a buyer
+  if (account.role !== "buyer") {
+    throw new UnauthenticatedError("This login is only for buyer accounts");
   }
 
   const isPasswordCorrect = await account.comparePassword(password);
@@ -157,7 +231,7 @@ const buyerLogin = asyncErrorHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: "Login successful",
+    message: "Buyer login successful",
     data: {
       token,
       user: {
@@ -167,20 +241,61 @@ const buyerLogin = asyncErrorHandler(async (req, res) => {
         username: account.username,
         email: account.email,
         contactNo: account.contactNo,
+        address: account.address,
+        dateOfBirth: account.dateOfBirth,
         role: account.role,
         isVerified: account.isVerified,
       },
     },
   });
 
-  console.log(`User ${account.username} has successfully logged in.`);
+  console.log(`Buyer ${account.username} has successfully logged in.`);
 });
 
 /**
- * Get Buyer Profile
+ * Get User Profile (for all account types)
+ */
+const getUserProfile = asyncErrorHandler(async (req, res) => {
+  const user = req.user;
+
+  // Prepare user data based on account type
+  const userData = {
+    id: user._id,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    username: user.username,
+    email: user.email,
+    contactNo: user.contactNo,
+    role: user.role,
+    isVerified: user.isVerified,
+    createdAt: user.createdAt,
+  };
+
+  // Add role-specific data
+  if (user.role === "buyer") {
+    userData.address = user.address;
+    userData.dateOfBirth = user.dateOfBirth;
+  }
+  // Add more role-specific fields as needed for seller/admin
+
+  res.status(200).json({
+    success: true,
+    data: {
+      user: userData,
+    },
+  });
+});
+
+/**
+ * Get Buyer Profile (specific for buyer accounts)
  */
 const getBuyerProfile = asyncErrorHandler(async (req, res) => {
   const user = req.user;
+
+  // Check if user is a buyer
+  if (user.role !== "buyer") {
+    throw new UnauthenticatedError("This profile is only for buyer accounts");
+  }
 
   res.status(200).json({
     success: true,
@@ -246,7 +361,9 @@ const resendOTP = asyncErrorHandler(async (req, res) => {
 module.exports = {
   buyerSignup,
   verifyOTP,
-  buyerLogin,
-  getBuyerProfile,
+  login,
+  buyerLogin, // Keep for backward compatibility
+  getUserProfile,
+  getBuyerProfile, // Keep for backward compatibility
   resendOTP,
 };

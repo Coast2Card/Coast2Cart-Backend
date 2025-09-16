@@ -4,7 +4,9 @@ const router = express.Router();
 const {
   buyerSignup,
   verifyOTP,
+  login,
   buyerLogin,
+  getUserProfile,
   getBuyerProfile,
   resendOTP,
 } = require("../controllers/authController");
@@ -35,10 +37,16 @@ router.post(
 // POST /api/auth/buyer/verify-otp
 router.post("/buyer/verify-otp", validateOTP, verifyOTP);
 
-// POST /api/auth/buyer/login
+// POST /api/auth/login (General login for all account types)
+router.post("/login", validateLogin, login);
+
+// POST /api/auth/buyer/login (Buyer-specific login - backward compatibility)
 router.post("/buyer/login", validateLogin, buyerLogin);
 
-// GET /api/auth/buyer/profile (Protected)
+// GET /api/auth/profile (General profile for all account types - Protected)
+router.get("/profile", authenticateToken, getUserProfile);
+
+// GET /api/auth/buyer/profile (Buyer-specific profile - backward compatibility)
 router.get("/buyer/profile", authenticateToken, getBuyerProfile);
 
 // POST /api/auth/buyer/resend-otp
