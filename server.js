@@ -23,7 +23,43 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get("/", (req, res) => {
-  res.json({ message: "Welcome to the Coast2Cart backend server." });
+  const mongoose = require("mongoose");
+
+  // Get database connection status
+  const dbStatus = mongoose.connection.readyState;
+  const dbStatusText = {
+    0: "disconnected",
+    1: "connected",
+    2: "connecting",
+    3: "disconnecting",
+  };
+
+  res.json({
+    message: "Coast2Cart Backend Server",
+    status: "running",
+    database: {
+      status: dbStatusText[dbStatus] || "unknown",
+      connected: dbStatus === 1,
+    },
+  });
+});
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  const mongoose = require("mongoose");
+
+  const dbStatus = mongoose.connection.readyState;
+  const isHealthy = dbStatus === 1; // 1 = connected
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? "healthy" : "unhealthy",
+    timestamp: new Date().toISOString(),
+    database: {
+      connected: dbStatus === 1,
+      status: dbStatus === 1 ? "connected" : "disconnected",
+    },
+    uptime: process.uptime(),
+  });
 });
 
 // ^ ROUTES
