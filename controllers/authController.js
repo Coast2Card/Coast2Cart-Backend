@@ -1,4 +1,5 @@
 const Account = require("../models/Accounts");
+const OTP = require("../models/OTP");
 const {
   BadRequestError,
   UnauthenticatedError,
@@ -10,9 +11,27 @@ const { generateToken } = require("../middleware/auth");
 const philsmsService = require("../services/philsmsService");
 
 /**
- * Buyer Signup
+ * Normalize email address (same logic as express-validator's normalizeEmail)
  */
-const buyerSignup = asyncErrorHandler(async (req, res) => {
+const normalizeEmail = (email) => {
+  if (!email || typeof email !== 'string') return email;
+  
+  const [localPart, domain] = email.toLowerCase().split('@');
+  
+  // Only normalize Gmail and Googlemail domains
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    // Remove periods from local part
+    const normalizedLocal = localPart.replace(/\./g, '');
+    return `${normalizedLocal}@${domain}`;
+  }
+  
+  return email.toLowerCase();
+};
+
+/**
+ * Unified Signup (for buyers and sellers)
+ */
+const signup = asyncErrorHandler(async (req, res) => {
   const {
     firstName,
     lastName,
@@ -23,10 +42,21 @@ const buyerSignup = asyncErrorHandler(async (req, res) => {
     email,
     password,
     confirmPassword,
+    role,
   } = req.body;
 
-  // Create new buyer account
-  const buyerData = {
+  // Validate role
+  if (!role || !["buyer", "seller"].includes(role)) {
+    throw new BadRequestError("Role must be either 'buyer' or 'seller'");
+  }
+
+  // Validate password confirmation
+  if (password !== confirmPassword) {
+    throw new BadRequestError("Passwords do not match");
+  }
+
+  // Create new account data
+  const accountData = {
     firstName,
     lastName,
     username: username.toLowerCase(),
@@ -35,42 +65,50 @@ const buyerSignup = asyncErrorHandler(async (req, res) => {
     address,
     email: email.toLowerCase(),
     password,
-    role: "buyer",
+    role,
     isVerified: false,
   };
 
-  const account = await Account.create(buyerData);
+  const account = await Account.create(accountData);
 
   // Generate OTP
-  const otp = philsmsService.generateOTP();
+  const otpCode = philsmsService.generateOTP();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-  // Store OTP in database
-  account.otp = {
-    code: otp,
+  // Store OTP in separate collection
+  await OTP.create({
+    userId: account._id,
+    otp: otpCode,
     expiresAt: expiresAt,
-  };
-  await account.save();
+  });
 
   // Send OTP via PhilSMS
-  const smsResult = await philsmsService.sendOTP(contactNo, otp);
-
+  const smsResult = await philsmsService.sendOTP(contactNo, otpCode);
   if (!smsResult.success) {
     // If SMS fails, still return success but log the error
     console.error("Failed to send OTP:", smsResult.error);
   }
 
+  // Prepare response message based on role
+  let message = "Account created successfully. Please verify your phone number with the OTP sent.";
+  if (role === "seller") {
+    message += " After verification, your seller account will be reviewed by an administrator for approval.";
+  }
+
   res.status(201).json({
     success: true,
-    message:
-      "Account created successfully. Please verify your phone number with the OTP sent.",
+    message,
     data: {
       userId: account._id,
       contactNo: contactNo,
       email: account.email,
+      role: account.role,
+      sellerApprovalStatus: account.sellerApprovalStatus,
     },
     smsSent: smsResult.success,
   });
+
+  console.log(`${role} account created: ${account.username}`);
 });
 
 /**
@@ -90,25 +128,30 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
     throw new BadRequestError("Account is already verified");
   }
 
-  if (!account.otp || !account.otp.code) {
+  // Find the OTP for this user
+  const otpRecord = await OTP.findOne({ userId: account._id }).sort({ createdAt: -1 });
+  
+  if (!otpRecord) {
     throw new BadRequestError("No OTP found. Please request a new one");
   }
 
   // Verify OTP
   const isValidOTP = philsmsService.verifyOTP(
-    account.otp.code,
+    otpRecord.otp,
     otp,
-    account.otp.expiresAt
+    otpRecord.expiresAt
   );
 
   if (!isValidOTP) {
     throw new BadRequestError("Invalid or expired OTP");
   }
 
-  // Mark account as verified and clear OTP
+  // Mark account as verified and delete the OTP record
   account.isVerified = true;
-  account.otp = undefined;
   await account.save();
+  
+  // Delete the used OTP
+  await OTP.findByIdAndDelete(otpRecord._id);
 
   res.status(200).json({
     success: true,
@@ -127,11 +170,18 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
 const login = asyncErrorHandler(async (req, res) => {
   const { identifier, password } = req.body;
 
+  // Normalize email if it looks like an email address
+  let normalizedIdentifier = identifier.toLowerCase();
+  if (identifier.includes('@')) {
+    // Apply the same normalization as in registration
+    normalizedIdentifier = normalizeEmail(identifier);
+  }
+
   // Find account by username, email, or contact number
   const account = await Account.findOne({
     $or: [
       { username: identifier.toLowerCase() },
-      { email: identifier.toLowerCase() },
+      { email: normalizedIdentifier },
       { contactNo: identifier },
     ],
   });
@@ -145,6 +195,20 @@ const login = asyncErrorHandler(async (req, res) => {
     throw new UnauthenticatedError(
       "Account not verified. Please verify your phone number first."
     );
+  }
+
+  // Check seller approval status for seller accounts
+  if (account.role === "seller") {
+    if (account.sellerApprovalStatus === "pending") {
+      throw new UnauthenticatedError(
+        "Your seller account is pending approval. Please wait for administrator review."
+      );
+    }
+    if (account.sellerApprovalStatus === "rejected") {
+      throw new UnauthenticatedError(
+        "Your seller account has been rejected. Please contact support for more information."
+      );
+    }
   }
 
   const isPasswordCorrect = await account.comparePassword(password);
@@ -190,134 +254,6 @@ const login = asyncErrorHandler(async (req, res) => {
 });
 
 /**
- * Buyer Login (specific for buyer accounts)
- */
-const buyerLogin = asyncErrorHandler(async (req, res) => {
-  const { identifier, password } = req.body;
-
-  // Find account by username, email, or contact number
-  const account = await Account.findOne({
-    $or: [
-      { username: identifier.toLowerCase() },
-      { email: identifier.toLowerCase() },
-      { contactNo: identifier },
-    ],
-  });
-
-  if (!account) {
-    throw new UnauthenticatedError("Invalid credentials");
-  }
-
-  // Check if account is verified
-  if (!account.isVerified) {
-    throw new UnauthenticatedError(
-      "Account not verified. Please verify your phone number first."
-    );
-  }
-
-  // Check if account is a buyer
-  if (account.role !== "buyer") {
-    throw new UnauthenticatedError("This login is only for buyer accounts");
-  }
-
-  const isPasswordCorrect = await account.comparePassword(password);
-
-  if (!isPasswordCorrect) {
-    throw new UnauthenticatedError("Invalid credentials");
-  }
-
-  // Generate JWT token
-  const token = generateToken(account._id);
-
-  res.status(200).json({
-    success: true,
-    message: "Buyer login successful",
-    data: {
-      token,
-      user: {
-        id: account._id,
-        firstName: account.firstName,
-        lastName: account.lastName,
-        username: account.username,
-        email: account.email,
-        contactNo: account.contactNo,
-        address: account.address,
-        dateOfBirth: account.dateOfBirth,
-        role: account.role,
-        isVerified: account.isVerified,
-      },
-    },
-  });
-
-  console.log(`Buyer ${account.username} has successfully logged in.`);
-});
-
-/**
- * Get User Profile (for all account types)
- */
-const getUserProfile = asyncErrorHandler(async (req, res) => {
-  const user = req.user;
-
-  // Prepare user data based on account type
-  const userData = {
-    id: user._id,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    username: user.username,
-    email: user.email,
-    contactNo: user.contactNo,
-    role: user.role,
-    isVerified: user.isVerified,
-    createdAt: user.createdAt,
-  };
-
-  // Add role-specific data
-  if (user.role === "buyer") {
-    userData.address = user.address;
-    userData.dateOfBirth = user.dateOfBirth;
-  }
-  // Add more role-specific fields as needed for seller/admin
-
-  res.status(200).json({
-    success: true,
-    data: {
-      user: userData,
-    },
-  });
-});
-
-/**
- * Get Buyer Profile (specific for buyer accounts)
- */
-const getBuyerProfile = asyncErrorHandler(async (req, res) => {
-  const user = req.user;
-
-  // Check if user is a buyer
-  if (user.role !== "buyer") {
-    throw new UnauthenticatedError("This profile is only for buyer accounts");
-  }
-
-  res.status(200).json({
-    success: true,
-    data: {
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        username: user.username,
-        email: user.email,
-        contactNo: user.contactNo,
-        address: user.address,
-        dateOfBirth: user.dateOfBirth,
-        role: user.role,
-        isVerified: user.isVerified,
-        createdAt: user.createdAt,
-      },
-    },
-  });
-});
-
-/**
  * Resend OTP
  */
 const resendOTP = asyncErrorHandler(async (req, res) => {
@@ -334,19 +270,19 @@ const resendOTP = asyncErrorHandler(async (req, res) => {
   }
 
   // Generate new OTP
-  const otp = philsmsService.generateOTP();
+  const otpCode = philsmsService.generateOTP();
   const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-  // Update OTP in database
-  account.otp = {
-    code: otp,
+  // Delete any existing OTPs for this user and create new one
+  await OTP.deleteMany({ userId: account._id });
+  await OTP.create({
+    userId: account._id,
+    otp: otpCode,
     expiresAt: expiresAt,
-  };
-  await account.save();
+  });
 
   // Send OTP via PhilSMS
-  const smsResult = await philsmsService.sendOTP(contactNo, otp);
-
+  const smsResult = await philsmsService.sendOTP(contactNo, otpCode);
   if (!smsResult.success) {
     console.error("Failed to resend OTP:", smsResult.error);
   }
@@ -358,12 +294,10 @@ const resendOTP = asyncErrorHandler(async (req, res) => {
   });
 });
 
+
 module.exports = {
-  buyerSignup,
+  signup, // Unified signup for buyers and sellers
   verifyOTP,
   login,
-  buyerLogin, // Keep for backward compatibility
-  getUserProfile,
-  getBuyerProfile, // Keep for backward compatibility
   resendOTP,
 };

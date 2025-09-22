@@ -15,9 +15,9 @@ const handleValidationErrors = (req, res, next) => {
 };
 
 /**
- * Validation rules for buyer signup
+ * Validation rules for unified signup (buyers and sellers)
  */
-const validateBuyerSignup = [
+const validateSignup = [
   body("firstName")
     .trim()
     .notEmpty()
@@ -99,8 +99,15 @@ const validateBuyerSignup = [
     return true;
   }),
 
+  body("role")
+    .notEmpty()
+    .withMessage("Role is required")
+    .isIn(["buyer", "seller"])
+    .withMessage("Role must be either 'buyer' or 'seller'"),
+
   handleValidationErrors,
 ];
+
 
 /**
  * Check if username is unique
@@ -311,8 +318,78 @@ const validateSellItem = [
   handleValidationErrors,
 ];
 
+/**
+ * Validation rules for profile updates
+ */
+const validateProfileUpdate = [
+  body("firstName")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage("First name must be between 2 and 50 characters"),
+
+  body("lastName")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Last name must be between 2 and 50 characters"),
+
+  body("username")
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 30 })
+    .withMessage("Username must be between 3 and 30 characters")
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage("Username can only contain letters, numbers, and underscores"),
+
+  body("dateOfBirth")
+    .optional()
+    .isISO8601()
+    .withMessage("Please provide a valid date of birth")
+    .custom((value) => {
+      const birthDate = new Date(value);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+
+      if (
+        monthDiff < 0 ||
+        (monthDiff === 0 && today.getDate() < birthDate.getDate())
+      ) {
+        age--;
+      }
+
+      if (age < 18) {
+        throw new Error("You must be at least 18 years old");
+      }
+      return true;
+    }),
+
+  body("contactNo")
+    .optional()
+    .trim()
+    .matches(/^9\d{9}$/)
+    .withMessage(
+      "Please provide a valid Philippine phone number starting with 9 (e.g., 9123456789)"
+    ),
+
+  body("address")
+    .optional()
+    .trim()
+    .isLength({ min: 10, max: 200 })
+    .withMessage("Address must be between 10 and 200 characters"),
+
+  body("email")
+    .optional()
+    .isEmail()
+    .withMessage("Please provide a valid email")
+    .normalizeEmail(),
+
+  handleValidationErrors,
+];
+
 module.exports = {
-  validateBuyerSignup,
+  validateSignup, // Unified signup validation
   checkUsernameUnique,
   checkEmailUnique,
   checkContactUnique,
@@ -321,5 +398,6 @@ module.exports = {
   validateItemCreation,
   validateItemUpdate,
   validateSellItem,
+  validateProfileUpdate,
   handleValidationErrors,
 };

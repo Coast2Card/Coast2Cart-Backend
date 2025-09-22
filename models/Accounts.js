@@ -59,31 +59,51 @@ const accountSchema = new Schema(
       type: Boolean,
       default: false,
     },
-    otp: {
-      code: String,
-      expiresAt: Date,
-    },
     role: {
       type: String,
-      enum: ["buyer", "seller", "admin"],
+      enum: ["buyer", "seller", "admin", "superadmin"],
       default: "buyer",
+    },
+    sellerApprovalStatus: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Account",
+    },
+    approvedAt: {
+      type: Date,
     },
   },
   { timestamps: true }
 );
 
 accountSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) {
-    return next();
+  // Handle password hashing
+  if (this.isModified("password")) {
+    try {
+      const salt = await bcrypt.genSalt(10);
+      this.password = await bcrypt.hash(this.password, salt);
+    } catch (error) {
+      return next(error);
+    }
   }
 
-  try {
-    const salt = await bcrypt.genSalt(10);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error);
+  // Set seller approval status based on role
+  if (this.isModified("role")) {
+    if (this.role === "seller") {
+      this.sellerApprovalStatus = "pending";
+    } else {
+      // Clear seller approval fields for non-sellers
+      this.sellerApprovalStatus = undefined;
+      this.approvedBy = undefined;
+      this.approvedAt = undefined;
+    }
   }
+
+  next();
 });
 
 accountSchema.methods.comparePassword = async function (candidatePassword) {
