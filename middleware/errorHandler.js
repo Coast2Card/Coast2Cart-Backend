@@ -5,6 +5,7 @@ const errorHandler = (err, req, res, next) => {
     success: false,
     message: err.message || "Internal Server Error",
     ...(err.accountNotVerified ? { accountNotVerified: true } : {}),
+    ...(err.contactNo ? { contactNo: err.contactNo } : {}),
   });
 };
 

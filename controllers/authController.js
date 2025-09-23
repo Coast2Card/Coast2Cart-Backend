@@ -72,6 +72,7 @@ const signup = asyncErrorHandler(async (req, res) => {
         "Account exists but is not verified. Please verify your phone number first."
       );
       err.accountNotVerified = true;
+      err.contactNo = existingAccount.contactNo;
       throw err;
     }
     throw new ConflictError(
@@ -238,6 +239,7 @@ const login = asyncErrorHandler(async (req, res) => {
       "Account not verified. Please verify your phone number first."
     );
     err.accountNotVerified = true;
+    err.contactNo = account.contactNo;
     throw err;
   }
 
