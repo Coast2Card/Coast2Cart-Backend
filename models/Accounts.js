@@ -67,7 +67,6 @@ const accountSchema = new Schema(
     sellerApprovalStatus: {
       type: String,
       enum: ["pending", "approved", "rejected"],
-      default: "pending",
     },
     approvedBy: {
       type: mongoose.Schema.Types.ObjectId,

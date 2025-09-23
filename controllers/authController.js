@@ -103,7 +103,7 @@ const signup = asyncErrorHandler(async (req, res) => {
       contactNo: contactNo,
       email: account.email,
       role: account.role,
-      sellerApprovalStatus: account.sellerApprovalStatus,
+      ...(account.role === "seller" && { sellerApprovalStatus: account.sellerApprovalStatus }),
     },
     smsSent: smsResult.success,
   });
