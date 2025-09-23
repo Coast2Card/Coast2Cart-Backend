@@ -58,7 +58,9 @@ const validateSignup = [
       }
 
       if (age < 18) {
-        throw new Error("You must be at least 18 years old to register");
+        throw new Error(
+          "You must be at least 18 years old to register for an account."
+        );
       }
       return true;
     }),
@@ -107,7 +109,6 @@ const validateSignup = [
 
   handleValidationErrors,
 ];
-
 
 /**
  * Check if username is unique
@@ -381,7 +382,9 @@ const validateProfileUpdate = [
       }
 
       if (age < 18) {
-        throw new Error("You must be at least 18 years old");
+        throw new Error(
+          "You must be at least 18 years old to create an account."
+        );
       }
       return true;
     }),
