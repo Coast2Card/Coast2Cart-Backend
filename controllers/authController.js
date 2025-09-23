@@ -178,9 +178,6 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
   // Delete the used OTP
   await OTP.findByIdAndDelete(otpRecord._id);
 
-  // Generate JWT token and return user data for immediate login
-  const token = generateToken(account._id);
-
   const userData = {
     id: account._id,
     firstName: account.firstName,
@@ -196,6 +193,21 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
     userData.address = account.address;
     userData.dateOfBirth = account.dateOfBirth;
   }
+
+  // For seller accounts, do NOT return a token
+  if (account.role === "seller") {
+    return res.status(200).json({
+      success: true,
+      message: "Account verified successfully. Your seller account will be reviewed by an administrator.",
+      data: {
+        user: userData,
+        sellerApprovalStatus: account.sellerApprovalStatus,
+      },
+    });
+  }
+
+  // Generate JWT token and return user data for immediate login (non-seller)
+  const token = generateToken(account._id);
 
   res.status(200).json({
     success: true,

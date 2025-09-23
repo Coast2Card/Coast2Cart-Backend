@@ -96,6 +96,7 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/accounts", require("./routes/accounts"));
 app.use("/api/items", require("./routes/items"));
 app.use("/api/cart", require("./routes/cart"));
+app.use("/api/test", require("./routes/test"));
 
 app.use(errorHandler);
 
