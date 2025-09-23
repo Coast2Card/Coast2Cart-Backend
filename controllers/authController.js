@@ -153,13 +153,31 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
   // Delete the used OTP
   await OTP.findByIdAndDelete(otpRecord._id);
 
+  // Generate JWT token and return user data for immediate login
+  const token = generateToken(account._id);
+
+  const userData = {
+    id: account._id,
+    firstName: account.firstName,
+    lastName: account.lastName,
+    username: account.username,
+    email: account.email,
+    contactNo: account.contactNo,
+    role: account.role,
+    isVerified: account.isVerified,
+  };
+
+  if (account.role === "buyer") {
+    userData.address = account.address;
+    userData.dateOfBirth = account.dateOfBirth;
+  }
+
   res.status(200).json({
     success: true,
-    message: "Account verified successfully. You can now log in.",
+    message: "Account verified successfully. Login successful",
     data: {
-      userId: account._id,
-      email: account.email,
-      isVerified: account.isVerified,
+      token,
+      user: userData,
     },
   });
 });

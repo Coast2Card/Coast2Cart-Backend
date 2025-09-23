@@ -1,6 +1,6 @@
 const { body, validationResult } = require("express-validator");
 const Account = require("../models/Accounts");
-const { BadRequestError } = require("../errors");
+const { BadRequestError, ConflictError } = require("../errors");
 
 /**
  * Handle validation errors
@@ -120,6 +120,13 @@ const checkUsernameUnique = async (req, res, next) => {
     });
 
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        return next(
+          new ConflictError(
+            "An account with this username exists but is not verified. Please verify your phone number or request a new OTP."
+          )
+        );
+      }
       return next(new BadRequestError("Username already exists"));
     }
 
@@ -138,6 +145,13 @@ const checkEmailUnique = async (req, res, next) => {
     const existingUser = await Account.findOne({ email: email.toLowerCase() });
 
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        return next(
+          new ConflictError(
+            "An account with this email exists but is not verified. Please verify your phone number or request a new OTP."
+          )
+        );
+      }
       return next(new BadRequestError("Email already exists"));
     }
 
@@ -156,6 +170,13 @@ const checkContactUnique = async (req, res, next) => {
     const existingUser = await Account.findOne({ contactNo });
 
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        return next(
+          new ConflictError(
+            "An account with this contact number exists but is not verified. Please verify your phone number or request a new OTP."
+          )
+        );
+      }
       return next(new BadRequestError("Contact number already exists"));
     }
 
