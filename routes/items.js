@@ -8,6 +8,7 @@ const {
   getItemById,
   updateItem,
   deleteItem,
+  setItemActiveStatus,
   sellItem,
   getSoldItemsBySeller,
   getSoldItemsByBuyer,
@@ -21,6 +22,7 @@ const {
 
 const { authenticateToken } = require("../middleware/auth");
 const { uploadSingle } = require("../middleware/upload");
+const { validateMulterImage, validateMulterImageOptional } = require("../middleware/validateMulterImage");
 
 // Public routes (no authentication required)
 
@@ -40,6 +42,7 @@ router.post(
   "/",
   authenticateToken,
   uploadSingle,
+  validateMulterImage,
   validateItemCreation,
   createItem
 );
@@ -49,12 +52,20 @@ router.put(
   "/:itemId",
   authenticateToken,
   uploadSingle,
+  validateMulterImageOptional,
   validateItemUpdate,
   updateItem
 );
 
 // DELETE /api/items/:itemId - Delete item (owner only)
 router.delete("/:itemId", authenticateToken, deleteItem);
+
+// PATCH /api/items/:itemId/status - Set active status (owner only)
+router.patch(
+  "/:itemId/status",
+  authenticateToken,
+  setItemActiveStatus
+);
 
 // POST /api/items/:itemId/sell - Sell an item (owner only)
 router.post("/:itemId/sell", authenticateToken, validateSellItem, sellItem);

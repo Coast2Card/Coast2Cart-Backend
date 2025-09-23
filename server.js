@@ -1,7 +1,6 @@
 require("dotenv").config();
 
 const cors = require("cors");
-const fileUpload = require("express-fileupload");
 
 const { connectDB, closeConnection } = require("./db/connect");
 const errorHandler = require("./middleware/errorHandler");
@@ -46,16 +45,7 @@ app.use(
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
-app.use(
-  fileUpload({
-    limits: {
-      fileSize: 10 * 1024 * 1024,
-    },
-    abortOnLimit: true,
-    useTempFiles: false,
-    createParentPath: true,
-  })
-);
+// Removed express-fileupload; multer is used per-route in middleware/upload.js
 
 app.get("/", async (req, res) => {
   const dbStatus = mongoose.connection.readyState;

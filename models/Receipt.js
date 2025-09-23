@@ -2,22 +2,22 @@ const mongoose = require("mongoose");
 
 const Schema = mongoose.Schema;
 
-const soldItemSchema = new Schema(
+const receiptSchema = new Schema(
   {
     item: {
       type: Schema.Types.ObjectId,
       ref: "Item",
-      required: [true, "Sold item must reference an original item"],
+      required: [true, "Receipt must reference an original item"],
     },
     seller: {
       type: Schema.Types.ObjectId,
       ref: "Account",
-      required: [true, "Sold item must belong to a seller"],
+      required: [true, "Receipt must belong to a seller"],
     },
     buyer: {
       type: Schema.Types.ObjectId,
       ref: "Account",
-      required: [true, "Sold item must have a buyer"],
+      required: [true, "Receipt must have a buyer"],
     },
     itemType: {
       type: String,
@@ -74,27 +74,27 @@ const soldItemSchema = new Schema(
 );
 
 // Index for better query performance
-soldItemSchema.index({ seller: 1, saleDate: -1 });
-soldItemSchema.index({ buyer: 1, saleDate: -1 });
-soldItemSchema.index({ itemType: 1, saleDate: -1 });
+receiptSchema.index({ seller: 1, saleDate: -1 });
+receiptSchema.index({ buyer: 1, saleDate: -1 });
+receiptSchema.index({ itemType: 1, saleDate: -1 });
 
 // Virtual for formatted price
-soldItemSchema.virtual("formattedPrice").get(function () {
+receiptSchema.virtual("formattedPrice").get(function () {
   return `₱${this.itemPrice.toFixed(2)}`;
 });
 
 // Virtual for formatted total amount
-soldItemSchema.virtual("formattedTotalAmount").get(function () {
+receiptSchema.virtual("formattedTotalAmount").get(function () {
   return `₱${this.totalAmount.toFixed(2)}`;
 });
 
 // Virtual for formatted quantity with unit
-soldItemSchema.virtual("formattedQuantity").get(function () {
+receiptSchema.virtual("formattedQuantity").get(function () {
   return `${this.quantitySold} ${this.unit}`;
 });
 
 // Virtual for time since sale
-soldItemSchema.virtual("timeSinceSale").get(function () {
+receiptSchema.virtual("timeSinceSale").get(function () {
   const now = new Date();
   const diffInMs = now - this.saleDate;
   const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
@@ -107,7 +107,9 @@ soldItemSchema.virtual("timeSinceSale").get(function () {
 });
 
 // Ensure virtual fields are serialized
-soldItemSchema.set("toJSON", { virtuals: true });
-soldItemSchema.set("toObject", { virtuals: true });
+receiptSchema.set("toJSON", { virtuals: true });
+receiptSchema.set("toObject", { virtuals: true });
 
-module.exports = mongoose.model("SoldItem", soldItemSchema);
+module.exports = mongoose.model("Receipt", receiptSchema);
+
+
