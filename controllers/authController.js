@@ -5,6 +5,8 @@ const {
   UnauthenticatedError,
   UnauthorizedError,
   NotFoundError,
+  ConflictError,
+  TooManyRequestsError,
 } = require("../errors");
 const asyncErrorHandler = require("../middleware/asyncErrorHandler");
 const { generateToken } = require("../middleware/auth");
@@ -53,6 +55,28 @@ const signup = asyncErrorHandler(async (req, res) => {
   // Validate password confirmation
   if (password !== confirmPassword) {
     throw new BadRequestError("Passwords do not match");
+  }
+
+  // Check for existing account with same username/email/contact
+  const existingAccount = await Account.findOne({
+    $or: [
+      { username: username.toLowerCase() },
+      { email: email.toLowerCase() },
+      { contactNo: contactNo },
+    ],
+  });
+
+  if (existingAccount) {
+    if (!existingAccount.isVerified) {
+      const err = new ConflictError(
+        "Account exists but is not verified. Please verify your phone number first."
+      );
+      err.accountNotVerified = true;
+      throw err;
+    }
+    throw new ConflictError(
+      "Account with the provided username, email, or contact number already exists"
+    );
   }
 
   // Create new account data
@@ -210,9 +234,11 @@ const login = asyncErrorHandler(async (req, res) => {
 
   // Check if account is verified (required for all account types)
   if (!account.isVerified) {
-    throw new UnauthenticatedError(
+    const err = new UnauthenticatedError(
       "Account not verified. Please verify your phone number first."
     );
+    err.accountNotVerified = true;
+    throw err;
   }
 
   // Check seller approval status for seller accounts
@@ -285,6 +311,15 @@ const resendOTP = asyncErrorHandler(async (req, res) => {
 
   if (account.isVerified) {
     throw new BadRequestError("Account is already verified");
+  }
+
+  // Enforce 5-minute cooldown: block resend if an unexpired OTP exists
+  const lastOtp = await OTP.findOne({ userId: account._id }).sort({ createdAt: -1 });
+  if (lastOtp && lastOtp.expiresAt && lastOtp.expiresAt > new Date()) {
+    const remainingSeconds = Math.ceil((lastOtp.expiresAt.getTime() - Date.now()) / 1000);
+    throw new TooManyRequestsError(
+      `Please wait ${remainingSeconds} seconds before requesting a new OTP`
+    );
   }
 
   // Generate new OTP
