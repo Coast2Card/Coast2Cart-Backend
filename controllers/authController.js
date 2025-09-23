@@ -187,7 +187,7 @@ const login = asyncErrorHandler(async (req, res) => {
   });
 
   if (!account) {
-    throw new UnauthenticatedError("Invalid credentials");
+    throw new NotFoundError("Account does not exist");
   }
 
   // Check if account is verified (required for all account types)
@@ -214,7 +214,7 @@ const login = asyncErrorHandler(async (req, res) => {
   const isPasswordCorrect = await account.comparePassword(password);
 
   if (!isPasswordCorrect) {
-    throw new UnauthenticatedError("Invalid credentials");
+    throw new UnauthenticatedError("Invalid username/email/phone number and password");
   }
 
   // Generate JWT token
