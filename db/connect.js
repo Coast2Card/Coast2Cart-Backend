@@ -33,7 +33,6 @@ const connectDB = async (url) => {
         retryWrites: true,
         retryReads: true,
         heartbeatFrequencyMS: 10000,
-        maxConnecting: 2,
       };
 
       console.log("Creating a new MongoDB connection...");

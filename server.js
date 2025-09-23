@@ -1,32 +1,64 @@
 require("dotenv").config();
 
-const express = require("express");
 const cors = require("cors");
+const fileUpload = require("express-fileupload");
 
 const { connectDB, closeConnection } = require("./db/connect");
 const errorHandler = require("./middleware/errorHandler");
 
+const express = require("express");
 const app = express();
+const mongoose = require("mongoose");
+
+const dbStatusText = {
+  0: "disconnected",
+  1: "connected",
+  2: "connecting",
+  3: "disconnecting",
+};
+
+const getDbHealth = () => {
+  const state = mongoose.connection.readyState;
+  return {
+    connected: state === 1,
+    status: dbStatusText[state] || "unknown",
+    readyState: state,
+  };
+};
 
 // Middleware
+// app.use(
+//   cors({
+//     origin:
+//       process.env.NODE_ENV === "production"
+//         ? ["https://your-frontend-domain.com"]
+//         : ["http://localhost:5173", "http://localhost:3000"],
+//     credentials: true,
+//   })
+// );
 app.use(
   cors({
-    origin:
-      process.env.NODE_ENV === "production"
-        ? ["https://your-frontend-domain.com"]
-        : ["http://localhost:5173", "http://localhost:3000"],
+    origin: "*",
     credentials: true,
   })
 );
 
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "20mb" }));
+app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+
+app.use(
+  fileUpload({
+    limits: {
+      fileSize: 10 * 1024 * 1024,
+    },
+    abortOnLimit: true,
+    useTempFiles: false,
+    createParentPath: true,
+  })
+);
 
 app.get("/", async (req, res) => {
-  const mongoose = require("mongoose");
-
-  // Get database connection status
-  let dbStatus = mongoose.connection.readyState;
+  const dbStatus = mongoose.connection.readyState;
   const dbStatusText = {
     0: "disconnected",
     1: "connected",
@@ -34,22 +66,8 @@ app.get("/", async (req, res) => {
     3: "disconnecting",
   };
 
-  // For serverless environments, ensure connection is established
-  if (dbStatus !== 1 && process.env.MONGODB_URI) {
-    console.log("Ensuring MongoDB connection...");
-    try {
-      // Use the existing connectDB function for consistency
-      const { connectDB } = require("./db/connect");
-      await connectDB(process.env.MONGODB_URI);
-      dbStatus = mongoose.connection.readyState;
-      console.log("MongoDB connection verified!");
-    } catch (err) {
-      console.error("MongoDB connection failed:", err.message);
-    }
-  }
-
   res.json({
-    message: "Coast2Cart Backend Server",
+    message: "Welcome to the Coast2Cart Backend Server",
     status: "running",
     database: {
       status: dbStatusText[dbStatus] || "unknown",
@@ -62,18 +80,13 @@ app.get("/", async (req, res) => {
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
-  const mongoose = require("mongoose");
-
-  const dbStatus = mongoose.connection.readyState;
-  const isHealthy = dbStatus === 1; // 1 = connected
+  const details = getDbHealth();
+  const isHealthy = details.connected;
 
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? "healthy" : "unhealthy",
     timestamp: new Date().toISOString(),
-    database: {
-      connected: dbStatus === 1,
-      status: dbStatus === 1 ? "connected" : "disconnected",
-    },
+    database: details,
     uptime: process.uptime(),
   });
 });
@@ -88,25 +101,23 @@ app.use(errorHandler);
 
 const start = async () => {
   try {
-    console.log("Starting server...");
-    console.log("MONGODB_URI exists:", !!process.env.MONGODB_URI);
+    console.log("Starting the server...");
 
     await connectDB(process.env.MONGODB_URI);
     console.log("Database connection established successfully!");
 
-    const server = app.listen(process.env.PORT, () => {
-      console.log(`Server is running on port ${process.env.PORT}`);
+    const basePort = Number(process.env.PORT) || 4000;
+    const server = app.listen(basePort, () => {
+      console.log(`Server is running on port ${basePort}`);
       console.log("Server startup completed successfully!");
     });
 
     server.on("error", (error) => {
       if (error.code === "EADDRINUSE") {
-        console.log(
-          `Port ${process.env.PORT} is busy, trying ${process.env.PORT + 1}`
-        );
+        console.log(`Port ${basePort} is busy, trying ${basePort + 1}`);
         server.close();
-        app.listen(process.env.PORT + 1, () => {
-          console.log(`Server is running on port ${process.env.PORT + 1}`);
+        app.listen(basePort + 1, () => {
+          console.log(`Server is running on port ${basePort + 1}`);
         });
       } else {
         console.error("Server error:", error);
