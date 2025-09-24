@@ -29,7 +29,7 @@ const cartSchema = new Schema(
 );
 
 // Index for better query performance
-cartSchema.index({ user: 1 }, { unique: true });
+// Note: user field already has unique: true constraint, so no need for explicit index
 
 // Virtual for cart total
 cartSchema.virtual("cartTotal").get(function () {
