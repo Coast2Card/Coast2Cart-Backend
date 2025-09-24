@@ -46,11 +46,19 @@ const addToCart = async (req, res, next) => {
       return next(new BadRequestError("You cannot add your own items to cart"));
     }
 
+    // Find or create user's cart
+    let cart = await Cart.findOne({ user: req.user.id });
+    
+    if (!cart) {
+      // Create new cart
+      cart = new Cart({
+        user: req.user.id,
+        items: []
+      });
+    }
+
     // Check if item already exists in cart
-    const existingCartItem = await Cart.findOne({
-      user: req.user.id,
-      item: itemId,
-    });
+    const existingCartItem = cart.findItem(itemId);
 
     if (existingCartItem) {
       // Update existing cart item
@@ -63,38 +71,23 @@ const addToCart = async (req, res, next) => {
         );
       }
 
-      existingCartItem.quantity = newQuantity;
-      await existingCartItem.save();
-
-      res.status(StatusCodes.OK).json({
-        success: true,
-        message: "Cart item updated successfully",
-        data: {
-          itemId,
-          quantity: newQuantity,
-          addedAt: existingCartItem.updatedAt,
-        },
-      });
+      cart.updateItemQuantity(itemId, newQuantity);
     } else {
-      // Create new cart item
-      const cartItem = new Cart({
-        user: req.user.id,
-        item: itemId,
-        quantity: parsedQuantity,
-      });
-
-      await cartItem.save();
-
-      res.status(StatusCodes.CREATED).json({
-        success: true,
-        message: "Item added to cart successfully",
-        data: {
-          itemId,
-          quantity: parsedQuantity,
-          addedAt: cartItem.createdAt,
-        },
-      });
+      // Add new item to cart
+      cart.addItem(itemId, parsedQuantity);
     }
+
+    await cart.save();
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: existingCartItem ? "Cart item updated successfully" : "Item added to cart successfully",
+      data: {
+        itemId,
+        quantity: existingCartItem ? existingCartItem.quantity + parsedQuantity : parsedQuantity,
+        addedAt: cart.updatedAt,
+      },
+    });
   } catch (error) {
     next(error);
   }
@@ -105,27 +98,35 @@ const addToCart = async (req, res, next) => {
  */
 const getCart = async (req, res, next) => {
   try {
-    const cartItems = await Cart.find({ user: req.user.id })
+    const cart = await Cart.findOne({ user: req.user.id })
       .populate({
-        path: "item",
+        path: "items.item",
         populate: {
           path: "seller",
           select: "firstName lastName username email contactNo address",
         },
-      })
-      .sort({ createdAt: -1 });
+      });
 
-    // Calculate totals
+    if (!cart) {
+      // Return empty cart if none exists
+      return res.status(StatusCodes.OK).json({
+        success: true,
+        data: [],
+        cartTotal: 0,
+        itemCount: 0,
+        sellerCount: 0,
+      });
+    }
+
+    // Calculate totals and format data
     let cartTotal = 0;
-    let itemCount = 0;
     const sellerIds = new Set();
 
-    const cartData = cartItems
+    const cartData = cart.items
       .map((cartItem) => {
         if (cartItem.item) {
           const totalPrice = cartItem.item.itemPrice * cartItem.quantity;
           cartTotal += totalPrice;
-          itemCount += 1;
           sellerIds.add(cartItem.item.seller._id.toString());
 
           return {
@@ -140,7 +141,7 @@ const getCart = async (req, res, next) => {
             },
             quantity: cartItem.quantity,
             totalPrice,
-            addedAt: cartItem.createdAt,
+            addedAt: cart.createdAt,
           };
         }
         return null;
@@ -151,7 +152,7 @@ const getCart = async (req, res, next) => {
       success: true,
       data: cartData,
       cartTotal,
-      itemCount,
+      itemCount: cart.items.length,
       sellerCount: sellerIds.size,
     });
   } catch (error) {
@@ -179,19 +180,22 @@ const updateCartItem = async (req, res, next) => {
       );
     }
 
-    // Find cart item
-    const cartItem = await Cart.findOne({
-      user: req.user.id,
-      item: itemId,
-    });
+    // Find user's cart
+    const cart = await Cart.findOne({ user: req.user.id });
+    if (!cart) {
+      return next(new NotFoundError("Cart not found"));
+    }
 
-    if (!cartItem) {
+    // Check if item exists in cart
+    const existingCartItem = cart.findItem(itemId);
+    if (!existingCartItem) {
       return next(new NotFoundError("Item not found in cart"));
     }
 
     // If quantity is 0, remove item from cart
     if (parsedQuantity === 0) {
-      await Cart.findByIdAndDelete(cartItem._id);
+      cart.removeItem(itemId);
+      await cart.save();
       return res.status(StatusCodes.OK).json({
         success: true,
         message: "Item removed from cart successfully",
@@ -214,8 +218,8 @@ const updateCartItem = async (req, res, next) => {
     }
 
     // Update cart item
-    cartItem.quantity = parsedQuantity;
-    await cartItem.save();
+    cart.updateItemQuantity(itemId, parsedQuantity);
+    await cart.save();
 
     const totalPrice = item.itemPrice * parsedQuantity;
 
@@ -244,14 +248,18 @@ const removeFromCart = async (req, res, next) => {
       return next(new BadRequestError("Item ID is required"));
     }
 
-    const cartItem = await Cart.findOneAndDelete({
-      user: req.user.id,
-      item: itemId,
-    });
+    const cart = await Cart.findOne({ user: req.user.id });
+    if (!cart) {
+      return next(new NotFoundError("Cart not found"));
+    }
 
-    if (!cartItem) {
+    const existingCartItem = cart.findItem(itemId);
+    if (!existingCartItem) {
       return next(new NotFoundError("Item not found in cart"));
     }
+
+    cart.removeItem(itemId);
+    await cart.save();
 
     res.status(StatusCodes.OK).json({
       success: true,
@@ -267,7 +275,13 @@ const removeFromCart = async (req, res, next) => {
  */
 const clearCart = async (req, res, next) => {
   try {
-    await Cart.deleteMany({ user: req.user.id });
+    const cart = await Cart.findOne({ user: req.user.id });
+    if (!cart) {
+      return next(new NotFoundError("Cart not found"));
+    }
+
+    cart.clearItems();
+    await cart.save();
 
     res.status(StatusCodes.OK).json({
       success: true,
@@ -283,19 +297,27 @@ const clearCart = async (req, res, next) => {
  */
 const getCartSummary = async (req, res, next) => {
   try {
-    const cartItems = await Cart.find({ user: req.user.id }).populate(
-      "item",
-      "itemPrice seller"
-    );
+    const cart = await Cart.findOne({ user: req.user.id })
+      .populate("items.item", "itemPrice seller");
+
+    if (!cart) {
+      return res.status(StatusCodes.OK).json({
+        success: true,
+        data: {
+          itemCount: 0,
+          sellerCount: 0,
+          cartTotal: 0,
+          formattedTotal: "₱0.00",
+        },
+      });
+    }
 
     let cartTotal = 0;
-    let itemCount = 0;
     const sellerIds = new Set();
 
-    cartItems.forEach((cartItem) => {
+    cart.items.forEach((cartItem) => {
       if (cartItem.item) {
         cartTotal += cartItem.item.itemPrice * cartItem.quantity;
-        itemCount += 1;
         sellerIds.add(cartItem.item.seller.toString());
       }
     });
@@ -303,7 +325,7 @@ const getCartSummary = async (req, res, next) => {
     res.status(StatusCodes.OK).json({
       success: true,
       data: {
-        itemCount,
+        itemCount: cart.items.length,
         sellerCount: sellerIds.size,
         cartTotal,
         formattedTotal: `₱${cartTotal.toFixed(2)}`,
