@@ -69,9 +69,9 @@ const validateSignup = [
     .trim()
     .notEmpty()
     .withMessage("Contact number is required")
-    .matches(/^9\d{9}$/)
+    .matches(/^(?:\+?63|0)?9\d{9}$/)
     .withMessage(
-      "Please provide a valid Philippine phone number starting with 9 (e.g., 9123456789)"
+      "Please provide a valid Philippine phone number (e.g., 9123456789, 09123456789, +639123456789)"
     ),
 
   body("address")
@@ -204,9 +204,9 @@ const validateOTP = [
     .trim()
     .notEmpty()
     .withMessage("Contact number is required")
-    .matches(/^9\d{9}$/)
+    .matches(/^(?:\+?63|0)?9\d{9}$/)
     .withMessage(
-      "Please provide a valid Philippine phone number starting with 9 (e.g., 9123456789)"
+      "Please provide a valid Philippine phone number (e.g., 9123456789, 09123456789, +639123456789)"
     ),
 
   handleValidationErrors,

@@ -22,6 +22,21 @@ class PhilSMSService {
     }
   }
 
+  /**
+   * Normalize PH contact number to canonical 10-digit format starting with 9
+   * Accepts inputs like 09XXXXXXXXX, 9XXXXXXXXX, +639XXXXXXXXX, 639XXXXXXXXX
+   */
+  normalizePhContact(input) {
+    if (!input || typeof input !== "string") return input;
+    const digits = input.replace(/\D/g, "");
+    if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
+    if (digits.length === 12 && digits.startsWith("63")) return digits.slice(2);
+    if (digits.length === 13 && digits.startsWith("+63".replace("+", ""))) return digits.slice(2); // safety
+    if (digits.length === 13 && digits.startsWith("063")) return digits.slice(3);
+    if (digits.length === 10 && digits.startsWith("9")) return digits;
+    return digits;
+  }
+
   // Generate a random 6-digit OTP
   generateOTP() {
     return Math.floor(100000 + Math.random() * 900000).toString();

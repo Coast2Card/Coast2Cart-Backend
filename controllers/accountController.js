@@ -46,8 +46,9 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     throw new ConflictError("Email already exists");
   }
 
-  // Check if contact number already exists
-  const existingContact = await Account.findOne({ contactNo });
+  // Normalize contact number and check if contact number already exists
+  const normalizedContact = philsmsService.normalizePhContact(contactNo);
+  const existingContact = await Account.findOne({ contactNo: normalizedContact });
   if (existingContact) {
     throw new ConflictError("Contact number already exists");
   }
@@ -58,7 +59,7 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     lastName,
     username: username.toLowerCase(),
     dateOfBirth,
-    contactNo,
+    contactNo: normalizedContact,
     address,
     email: email.toLowerCase(),
     password,
@@ -204,9 +205,10 @@ const updateAdminAccount = asyncErrorHandler(async (req, res) => {
     }
   }
 
-  if (contactNo && contactNo !== adminAccount.contactNo) {
+  if (contactNo && philsmsService.normalizePhContact(contactNo) !== adminAccount.contactNo) {
+    const normalized = philsmsService.normalizePhContact(contactNo);
     const existingContact = await Account.findOne({
-      contactNo,
+      contactNo: normalized,
       _id: { $ne: adminId },
     });
     if (existingContact) {
@@ -219,7 +221,7 @@ const updateAdminAccount = asyncErrorHandler(async (req, res) => {
   if (lastName) adminAccount.lastName = lastName;
   if (username) adminAccount.username = username.toLowerCase();
   if (dateOfBirth) adminAccount.dateOfBirth = dateOfBirth;
-  if (contactNo) adminAccount.contactNo = contactNo;
+  if (contactNo) adminAccount.contactNo = philsmsService.normalizePhContact(contactNo);
   if (address) adminAccount.address = address;
   if (email) adminAccount.email = email.toLowerCase();
 

@@ -57,12 +57,15 @@ const signup = asyncErrorHandler(async (req, res) => {
     throw new BadRequestError("Passwords do not match");
   }
 
+  // Normalize contact number to canonical format
+  const normalizedContact = philsmsService.normalizePhContact(contactNo);
+
   // Check for existing account with same username/email/contact
   const existingAccount = await Account.findOne({
     $or: [
       { username: username.toLowerCase() },
       { email: email.toLowerCase() },
-      { contactNo: contactNo },
+      { contactNo: normalizedContact },
     ],
   });
 
@@ -86,7 +89,7 @@ const signup = asyncErrorHandler(async (req, res) => {
     lastName,
     username: username.toLowerCase(),
     dateOfBirth,
-    contactNo,
+    contactNo: normalizedContact,
     address,
     email: email.toLowerCase(),
     password,
@@ -108,7 +111,7 @@ const signup = asyncErrorHandler(async (req, res) => {
   });
 
   // Send OTP via PhilSMS
-  const smsResult = await philsmsService.sendOTP(contactNo, otpCode);
+  const smsResult = await philsmsService.sendOTP(normalizedContact, otpCode);
   if (!smsResult.success) {
     // If SMS fails, still return success but log the error
     console.error("Failed to send OTP:", smsResult.error);
@@ -125,7 +128,7 @@ const signup = asyncErrorHandler(async (req, res) => {
     message,
     data: {
       userId: account._id,
-      contactNo: contactNo,
+      contactNo: normalizedContact,
       email: account.email,
       role: account.role,
       ...(account.role === "seller" && { sellerApprovalStatus: account.sellerApprovalStatus }),
@@ -141,9 +144,10 @@ const signup = asyncErrorHandler(async (req, res) => {
  */
 const verifyOTP = asyncErrorHandler(async (req, res) => {
   const { otp, contactNo } = req.body;
+  const normalizedContact = philsmsService.normalizePhContact(contactNo);
 
   // Find account by contact number
-  const account = await Account.findOne({ contactNo });
+  const account = await Account.findOne({ contactNo: normalizedContact });
 
   if (!account) {
     throw new NotFoundError("Account not found with this contact number");
@@ -232,12 +236,15 @@ const login = asyncErrorHandler(async (req, res) => {
     normalizedIdentifier = normalizeEmail(identifier);
   }
 
+  // Normalize identifier if it may be a phone number
+  const normalizedPhoneCandidate = philsmsService.normalizePhContact(identifier);
+
   // Find account by username, email, or contact number
   const account = await Account.findOne({
     $or: [
       { username: identifier.toLowerCase() },
       { email: normalizedIdentifier },
-      { contactNo: identifier },
+      { contactNo: normalizedPhoneCandidate },
     ],
   });
 
@@ -316,8 +323,9 @@ const login = asyncErrorHandler(async (req, res) => {
  */
 const resendOTP = asyncErrorHandler(async (req, res) => {
   const { contactNo } = req.body;
+  const normalizedContact = philsmsService.normalizePhContact(contactNo);
 
-  const account = await Account.findOne({ contactNo });
+  const account = await Account.findOne({ contactNo: normalizedContact });
 
   if (!account) {
     throw new NotFoundError("Account not found with this contact number");
@@ -349,7 +357,7 @@ const resendOTP = asyncErrorHandler(async (req, res) => {
   });
 
   // Send OTP via PhilSMS
-  const smsResult = await philsmsService.sendOTP(contactNo, otpCode);
+  const smsResult = await philsmsService.sendOTP(normalizedContact, otpCode);
   if (!smsResult.success) {
     console.error("Failed to resend OTP:", smsResult.error);
   }
