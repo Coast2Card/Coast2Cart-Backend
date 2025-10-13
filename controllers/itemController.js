@@ -12,6 +12,22 @@ const {
   deleteImage,
 } = require("../services/imageUploadService");
 
+// Helper to shape item responses: limit seller fields and remove sensitive/unused fields
+const sanitizeItem = (item) => {
+  const raw = item && typeof item.toObject === "function" ? item.toObject({ virtuals: true }) : item;
+  if (!raw) return raw;
+  // Strip fields
+  delete raw.itemPrice;
+  delete raw.unit;
+  delete raw.imagePublicId;
+  delete raw.__v;
+  // Minimize seller
+  if (raw.seller && typeof raw.seller === "object") {
+    raw.seller = { _id: raw.seller._id, username: raw.seller.username };
+  }
+  return raw;
+};
+
 /**
  * Create a new item listing
  */
@@ -93,16 +109,13 @@ const createItem = async (req, res, next) => {
       throw saveError;
     }
 
-    // Populate seller information
-    await item.populate(
-      "seller",
-      "firstName lastName username email contactNo address"
-    );
+    // Populate minimal seller information
+    await item.populate("seller", "username");
 
     res.status(StatusCodes.CREATED).json({
       success: true,
       message: "Item created successfully",
-      data: item,
+      data: sanitizeItem(item),
     });
   } catch (error) {
     console.error("Item creation error:", error);
@@ -119,6 +132,8 @@ const getAllItems = async (req, res, next) => {
       itemType,
       seller,
       search,
+      category,
+      priceRange,
       sortBy = "catchDate",
       sortOrder = "desc",
       page = 1,
@@ -129,11 +144,42 @@ const getAllItems = async (req, res, next) => {
     const filter = { isActive: true };
 
     if (itemType) {
-      filter.itemType = itemType;
+      const normalizedType = String(itemType).toLowerCase();
+      if (normalizedType === "seafood") {
+        filter.itemType = { $in: ["fish", "food"] };
+      } else if (normalizedType === "souvenir") {
+        filter.itemType = "souvenirs";
+      } else {
+        filter.itemType = normalizedType;
+      }
     }
 
     if (seller) {
       filter.seller = seller;
+    }
+
+    if (category) {
+      filter.category = category;
+    }
+
+    // Handle price range filtering
+    if (priceRange) {
+      switch (priceRange) {
+        case "100-199":
+          filter.itemPrice = { $gte: 100, $lt: 200 };
+          break;
+        case "200-399":
+          filter.itemPrice = { $gte: 200, $lt: 400 };
+          break;
+        case "400-699":
+          filter.itemPrice = { $gte: 400, $lt: 700 };
+          break;
+        case "700+":
+          filter.itemPrice = { $gte: 700 };
+          break;
+        default:
+          return next(new BadRequestError("Invalid price range. Use: 100-199, 200-399, 400-699, or 700+"));
+      }
     }
 
     if (search) {
@@ -152,7 +198,7 @@ const getAllItems = async (req, res, next) => {
 
     // Execute query
     const items = await Item.find(filter)
-      .populate("seller", "firstName lastName username email contactNo address")
+      .populate("seller", "username")
       .sort(sort)
       .skip(skip)
       .limit(parseInt(limit));
@@ -160,16 +206,49 @@ const getAllItems = async (req, res, next) => {
     // Get total count for pagination
     const totalItems = await Item.countDocuments(filter);
 
-    res.status(StatusCodes.OK).json({
+    // Prepare response data
+    const responseData = {
       success: true,
-      data: items,
+      data: items.map(sanitizeItem),
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalItems / parseInt(limit)),
         totalItems,
         itemsPerPage: parseInt(limit),
       },
-    });
+    };
+
+    // Add category counts for seafood items when no specific category is requested
+    if (itemType === "seafood" && !category) {
+      const categoryCounts = await Item.aggregate([
+        {
+          $match: {
+            isActive: true,
+            itemType: { $in: ["fish", "food"] },
+            category: { $exists: true, $ne: null }
+          }
+        },
+        {
+          $group: {
+            _id: "$category",
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $sort: { count: -1 }
+        }
+      ]);
+
+      // Format category counts
+      const formattedCounts = categoryCounts.map(item => ({
+        category: item._id,
+        count: item.count
+      }));
+
+      responseData.categoryCounts = formattedCounts;
+    }
+
+    res.status(StatusCodes.OK).json(responseData);
   } catch (error) {
     next(error);
   }
@@ -199,7 +278,7 @@ const getItemsBySeller = async (req, res, next) => {
 
     // Execute query
     const items = await Item.find(filter)
-      .populate("seller", "firstName lastName username email contactNo address")
+      .populate("seller", "username")
       .sort({ catchDate: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -209,7 +288,7 @@ const getItemsBySeller = async (req, res, next) => {
 
     res.status(StatusCodes.OK).json({
       success: true,
-      data: items,
+      data: items.map(sanitizeItem),
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalItems / parseInt(limit)),
@@ -229,10 +308,7 @@ const getItemById = async (req, res, next) => {
   try {
     const { itemId } = req.params;
 
-    const item = await Item.findById(itemId).populate(
-      "seller",
-      "firstName lastName username email contactNo address"
-    );
+    const item = await Item.findById(itemId).populate("seller", "username");
 
     if (!item) {
       return next(new NotFoundError("Item not found"));
@@ -240,7 +316,7 @@ const getItemById = async (req, res, next) => {
 
     res.status(StatusCodes.OK).json({
       success: true,
-      data: item,
+      data: sanitizeItem(item),
     });
   } catch (error) {
     next(error);
@@ -304,15 +380,12 @@ const updateItem = async (req, res, next) => {
     const updatedItem = await Item.findByIdAndUpdate(itemId, updateData, {
       new: true,
       runValidators: true,
-    }).populate(
-      "seller",
-      "firstName lastName username email contactNo address"
-    );
+    }).populate("seller", "username");
 
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Item updated successfully",
-      data: updatedItem,
+      data: sanitizeItem(updatedItem),
     });
   } catch (error) {
     next(error);
@@ -384,15 +457,12 @@ const setItemActiveStatus = async (req, res, next) => {
     item.isActive = isActive;
     await item.save();
 
-    const populated = await item.populate(
-      "seller",
-      "firstName lastName username email contactNo address"
-    );
+    const populated = await item.populate("seller", "username");
 
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Item status updated",
-      data: populated,
+      data: sanitizeItem(populated),
     });
   } catch (error) {
     next(error);

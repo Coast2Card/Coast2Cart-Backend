@@ -237,6 +237,23 @@ const validateItemCreation = [
     .isIn(["fish", "souvenirs", "food"])
     .withMessage("Item type must be 'fish', 'souvenirs', or 'food'"),
 
+  body("category")
+    .if(body("itemType").isIn(["fish", "food"]))
+    .notEmpty()
+    .withMessage("Category is required for fish or food items")
+    .isIn([
+      "Fresh Fish",
+      "Shrimp & Prawns",
+      "Crabs",
+      "Squid & Octopus",
+      "Shellfish",
+      "Seaweed",
+      "Others",
+    ])
+    .withMessage(
+      "Category must be one of 'Fresh Fish', 'Shrimp & Prawns', 'Crabs', 'Squid & Octopus', 'Shellfish', 'Seaweed', 'Others'"
+    ),
+
   body("itemName")
     .trim()
     .notEmpty()
@@ -283,6 +300,27 @@ const validateItemUpdate = [
     .trim()
     .isIn(["fish", "souvenirs", "food"])
     .withMessage("Item type must be 'fish', 'souvenirs', or 'food'"),
+
+  body("category")
+    .optional({ values: "falsy" })
+    .if(body("itemType").custom((val, { req }) => {
+      // If updating type to fish/food OR current itemType is fish/food, require valid category when provided
+      const incomingType = val; // not used here, category field's value
+      const type = req.body.itemType;
+      return type ? ["fish", "food"].includes(type) : true;
+    }))
+    .isIn([
+      "Fresh Fish",
+      "Shrimp & Prawns",
+      "Crabs",
+      "Squid & Octopus",
+      "Shellfish",
+      "Seaweed",
+      "Others",
+    ])
+    .withMessage(
+      "Category must be one of 'Fresh Fish', 'Shrimp & Prawns', 'Crabs', 'Squid & Octopus', 'Shellfish', 'Seaweed', 'Others'"
+    ),
 
   body("itemName")
     .optional()
