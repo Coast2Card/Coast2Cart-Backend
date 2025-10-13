@@ -321,6 +321,28 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
     .skip(skip)
     .limit(parseInt(limit));
 
+  // Format accounts for response: fullName, email, contactNo (0-prefixed), address, status, createdAt, role
+  const formattedAccounts = accounts.map((acct) => {
+    const fullName = `${acct.firstName || ""} ${acct.lastName || ""}`.trim();
+    const contactNoRaw = acct.contactNo || "";
+    const contactNo = contactNoRaw
+      ? (contactNoRaw.startsWith("0") ? contactNoRaw : `0${contactNoRaw}`)
+      : "";
+    const status = acct.role === "seller"
+      ? (acct.sellerApprovalStatus || (acct.isVerified ? "verified" : "unverified"))
+      : (acct.isVerified ? "verified" : "unverified");
+
+    return {
+      fullName,
+      email: acct.email,
+      contactNo,
+      address: acct.address,
+      status,
+      createdAt: acct.createdAt,
+      role: acct.role,
+    };
+  });
+
   // Get total count for pagination
   const totalAccounts = await Account.countDocuments(searchQuery);
 
@@ -339,7 +361,7 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      accounts,
+      accounts: formattedAccounts,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalAccounts / parseInt(limit)),
