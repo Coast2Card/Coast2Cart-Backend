@@ -286,9 +286,21 @@ const deleteAdminAccount = asyncErrorHandler(async (req, res) => {
 const getAllAccounts = asyncErrorHandler(async (req, res) => {
   const { page = 1, limit = 10, role = "", search = "" } = req.query;
 
+  // Determine role filter based on caller and query param
+  const callerRole = req.user?.role;
+  let computedRoleFilter = undefined;
+
+  if (role) {
+    // Explicit role query respected (route layer already blocks admin querying admin)
+    computedRoleFilter = role;
+  } else if (callerRole === "admin") {
+    // Default for admins when no role provided: only buyer and seller
+    computedRoleFilter = { $in: ["buyer", "seller"] };
+  }
+
   // Build search query
   const searchQuery = {
-    ...(role && { role }),
+    ...(computedRoleFilter && { role: computedRoleFilter }),
     ...(search && {
       $or: [
         { firstName: { $regex: search, $options: "i" } },
@@ -312,8 +324,10 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
   // Get total count for pagination
   const totalAccounts = await Account.countDocuments(searchQuery);
 
-  // Get role counts
+  // Get role counts within the same filter scope
+  const matchStages = Object.keys(searchQuery).length ? [{ $match: searchQuery }] : [];
   const roleCounts = await Account.aggregate([
+    ...matchStages,
     {
       $group: {
         _id: "$role",
