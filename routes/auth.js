@@ -2,17 +2,14 @@ const express = require("express");
 const router = express.Router();
 
 const {
-  buyerSignup,
+  signup,
   verifyOTP,
   login,
-  buyerLogin,
-  getUserProfile,
-  getBuyerProfile,
   resendOTP,
 } = require("../controllers/authController");
 
 const {
-  validateBuyerSignup,
+  validateSignup,
   checkUsernameUnique,
   checkEmailUnique,
   checkContactUnique,
@@ -22,34 +19,25 @@ const {
 
 const { authenticateToken } = require("../middleware/auth");
 
-// Buyer Authentication Routes
+// Authentication Routes
 
-// POST /api/auth/buyer/signup
+// POST /api/auth/signup (Unified signup for buyers and sellers)
 router.post(
-  "/buyer/signup",
-  validateBuyerSignup,
+  "/signup",
+  validateSignup,
   checkUsernameUnique,
   checkEmailUnique,
   checkContactUnique,
-  buyerSignup
+  signup
 );
 
-// POST /api/auth/buyer/verify-otp
-router.post("/buyer/verify-otp", validateOTP, verifyOTP);
+// POST /api/auth/verify-otp (Unified OTP verification for buyers and sellers)
+router.post("/verify-otp", validateOTP, verifyOTP);
 
 // POST /api/auth/login (General login for all account types)
 router.post("/login", validateLogin, login);
 
-// POST /api/auth/buyer/login (Buyer-specific login - backward compatibility)
-router.post("/buyer/login", validateLogin, buyerLogin);
-
-// GET /api/auth/profile (General profile for all account types - Protected)
-router.get("/profile", authenticateToken, getUserProfile);
-
-// GET /api/auth/buyer/profile (Buyer-specific profile - backward compatibility)
-router.get("/buyer/profile", authenticateToken, getBuyerProfile);
-
-// POST /api/auth/buyer/resend-otp
-router.post("/buyer/resend-otp", resendOTP);
+// POST /api/auth/resend-otp (Unified OTP resend for buyers and sellers)
+router.post("/resend-otp", resendOTP);
 
 module.exports = router;

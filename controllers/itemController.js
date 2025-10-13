@@ -1,5 +1,5 @@
 const Item = require("../models/Item");
-const SoldItem = require("../models/SoldItem");
+const Receipt = require("../models/Receipt");
 const Account = require("../models/Accounts");
 const {
   BadRequestError,
@@ -8,11 +8,9 @@ const {
 } = require("../errors");
 const { StatusCodes } = require("http-status-codes");
 const {
-  uploadToCloudinary,
-  deleteFromCloudinary,
-  extractPublicId,
-  getOptimizedImageUrl,
-} = require("../middleware/cloudinaryUpload");
+  uploadImage,
+  deleteImage,
+} = require("../services/imageUploadService");
 
 /**
  * Create a new item listing
@@ -38,27 +36,14 @@ const createItem = async (req, res, next) => {
       );
     }
 
-    // Check if image was uploaded
-    if (!req.file) {
-      return next(new BadRequestError("Item image is required"));
-    }
-
-    // Validate image file
-    if (!req.file.mimetype.startsWith("image/")) {
-      return next(new BadRequestError("Only image files are allowed"));
-    }
-
-    // Validate file size (10MB limit)
-    if (req.file.size > 10 * 1024 * 1024) {
-      return next(
-        new BadRequestError("Image file size must be less than 10MB")
-      );
-    }
+    // Image presence/type/size validated by validateMulterImage middleware
 
     let cloudinaryResult = null;
     try {
-      // Upload image to Cloudinary
-      cloudinaryResult = await uploadToCloudinary(req.file, "coast2cart/items");
+      // Upload image to Cloudinary via service
+      cloudinaryResult = await uploadImage(req.file, {
+        folder: "coast2cart/items",
+      });
     } catch (uploadError) {
       console.error("Cloudinary upload failed:", uploadError);
       return next(
@@ -88,8 +73,8 @@ const createItem = async (req, res, next) => {
       itemPrice: parsedPrice,
       quantity: parsedQuantity,
       unit,
-      image: cloudinaryResult.secure_url, // Cloudinary URL
-      imagePublicId: cloudinaryResult.public_id, // Store public ID for future operations
+      image: cloudinaryResult.url, // Cloudinary URL from service
+      imagePublicId: cloudinaryResult.publicId, // Store public ID for future operations
       description,
       location,
     });
@@ -98,9 +83,9 @@ const createItem = async (req, res, next) => {
       await item.save();
     } catch (saveError) {
       // If item save fails, clean up uploaded image
-      if (cloudinaryResult && cloudinaryResult.public_id) {
+      if (cloudinaryResult && cloudinaryResult.publicId) {
         try {
-          await deleteFromCloudinary(cloudinaryResult.public_id);
+          await deleteImage(cloudinaryResult.publicId);
         } catch (deleteError) {
           console.error("Failed to clean up uploaded image:", deleteError);
         }
@@ -270,6 +255,11 @@ const updateItem = async (req, res, next) => {
     const { itemId } = req.params;
     const updateData = { ...req.body };
 
+    // Disallow status changes via general update endpoint
+    if (Object.prototype.hasOwnProperty.call(updateData, "isActive")) {
+      delete updateData.isActive;
+    }
+
     // Find the item
     const item = await Item.findById(itemId);
 
@@ -287,7 +277,7 @@ const updateItem = async (req, res, next) => {
       // Delete old image from Cloudinary if it exists
       if (item.imagePublicId) {
         try {
-          await deleteFromCloudinary(item.imagePublicId);
+          await deleteImage(item.imagePublicId);
         } catch (error) {
           console.error("Error deleting old image:", error);
           // Continue with update even if deletion fails
@@ -295,12 +285,11 @@ const updateItem = async (req, res, next) => {
       }
 
       // Upload new image to Cloudinary
-      const cloudinaryResult = await uploadToCloudinary(
-        req.file,
-        "coast2cart/items"
-      );
-      updateData.image = cloudinaryResult.secure_url;
-      updateData.imagePublicId = cloudinaryResult.public_id;
+      const uploadResult = await uploadImage(req.file, {
+        folder: "coast2cart/items",
+      });
+      updateData.image = uploadResult.url;
+      updateData.imagePublicId = uploadResult.publicId;
     }
 
     // Convert string numbers to actual numbers
@@ -351,20 +340,98 @@ const deleteItem = async (req, res, next) => {
     // Delete image from Cloudinary if it exists
     if (item.imagePublicId) {
       try {
-        await deleteFromCloudinary(item.imagePublicId);
+        await deleteImage(item.imagePublicId);
       } catch (error) {
         console.error("Error deleting image from Cloudinary:", error);
         // Continue with deletion even if image deletion fails
       }
     }
 
-    // Soft delete by setting isActive to false
-    item.isActive = false;
-    await item.save();
+    // Hard delete item document
+    await Item.findByIdAndDelete(itemId);
 
     res.status(StatusCodes.OK).json({
       success: true,
-      message: "Item deleted successfully",
+      message: "Item permanently deleted",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Set item active status (only by owner)
+ */
+const setItemActiveStatus = async (req, res, next) => {
+  try {
+    const { itemId } = req.params;
+    const { isActive } = req.body;
+
+    if (typeof isActive !== "boolean") {
+      return next(new BadRequestError("isActive must be a boolean"));
+    }
+
+    const item = await Item.findById(itemId);
+
+    if (!item) {
+      return next(new NotFoundError("Item not found"));
+    }
+
+    if (item.seller.toString() !== req.user.id) {
+      return next(new UnauthorizedError("You can only update your own items"));
+    }
+
+    item.isActive = isActive;
+    await item.save();
+
+    const populated = await item.populate(
+      "seller",
+      "firstName lastName username email contactNo address"
+    );
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: "Item status updated",
+      data: populated,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Hard delete item (only by owner)
+ */
+const deleteItemHard = async (req, res, next) => {
+  try {
+    const { itemId } = req.params;
+
+    const item = await Item.findById(itemId);
+
+    if (!item) {
+      return next(new NotFoundError("Item not found"));
+    }
+
+    // Check if user is the owner
+    if (item.seller.toString() !== req.user.id) {
+      return next(new UnauthorizedError("You can only delete your own items"));
+    }
+
+    // Delete image from Cloudinary if it exists
+    if (item.imagePublicId) {
+      try {
+        await deleteImage(item.imagePublicId);
+      } catch (error) {
+        console.error("Error deleting image from Cloudinary:", error);
+        // Continue with deletion even if image deletion fails
+      }
+    }
+
+    await Item.findByIdAndDelete(itemId);
+
+    res.status(StatusCodes.OK).json({
+      success: true,
+      message: "Item permanently deleted",
     });
   } catch (error) {
     next(error);
@@ -410,8 +477,8 @@ const sellItem = async (req, res, next) => {
     // Calculate total amount
     const totalAmount = item.itemPrice * parseFloat(quantitySold);
 
-    // Create sold item record
-    const soldItem = new SoldItem({
+  // Create receipt record
+  const receipt = new Receipt({
       item: item._id,
       seller: item.seller,
       buyer: buyerId,
@@ -426,7 +493,7 @@ const sellItem = async (req, res, next) => {
       notes,
     });
 
-    await soldItem.save();
+    await receipt.save();
 
     // Update item quantity
     item.quantity -= parseFloat(quantitySold);
@@ -438,8 +505,8 @@ const sellItem = async (req, res, next) => {
 
     await item.save();
 
-    // Populate the sold item with buyer and seller info
-    await soldItem.populate([
+    // Populate the receipt with buyer and seller info
+    await receipt.populate([
       {
         path: "seller",
         select: "firstName lastName username email contactNo address",
@@ -453,7 +520,7 @@ const sellItem = async (req, res, next) => {
     res.status(StatusCodes.CREATED).json({
       success: true,
       message: "Item sold successfully",
-      data: soldItem,
+      data: receipt,
     });
   } catch (error) {
     next(error);
@@ -478,15 +545,15 @@ const getSoldItemsBySeller = async (req, res, next) => {
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Execute query
-    const soldItems = await SoldItem.find(filter)
+  // Execute query
+  const soldItems = await Receipt.find(filter)
       .populate("buyer", "firstName lastName username email contactNo address")
       .sort({ saleDate: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
     // Get total count
-    const totalItems = await SoldItem.countDocuments(filter);
+  const totalItems = await Receipt.countDocuments(filter);
 
     res.status(StatusCodes.OK).json({
       success: true,
@@ -521,15 +588,15 @@ const getSoldItemsByBuyer = async (req, res, next) => {
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Execute query
-    const soldItems = await SoldItem.find(filter)
+  // Execute query
+  const soldItems = await Receipt.find(filter)
       .populate("seller", "firstName lastName username email contactNo address")
       .sort({ saleDate: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
     // Get total count
-    const totalItems = await SoldItem.countDocuments(filter);
+  const totalItems = await Receipt.countDocuments(filter);
 
     res.status(StatusCodes.OK).json({
       success: true,
@@ -553,6 +620,7 @@ module.exports = {
   getItemById,
   updateItem,
   deleteItem,
+  setItemActiveStatus,
   sellItem,
   getSoldItemsBySeller,
   getSoldItemsByBuyer,
