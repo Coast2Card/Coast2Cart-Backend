@@ -910,6 +910,45 @@ const updateUserProfile = asyncErrorHandler(async (req, res) => {
   console.log(`User ${userAccount.username} updated their profile`);
 });
 
+/**
+ * Delete Account (Admin/Superadmin only for buyers/sellers; Superadmin only for admins)
+ */
+const deleteAccount = asyncErrorHandler(async (req, res) => {
+  const { accountId } = req.params;
+
+  const account = await Account.findById(accountId);
+  if (!account) {
+    throw new NotFoundError("Account not found");
+  }
+
+  // Enforce role-based deletion
+  const requesterRole = req.user.role;
+
+  if (account.role === "admin") {
+    if (requesterRole !== "superadmin") {
+      throw new UnauthorizedError("Only superadmin can delete admin accounts");
+    }
+  } else if (account.role === "buyer" || account.role === "seller") {
+    if (!(requesterRole === "admin" || requesterRole === "superadmin")) {
+      throw new UnauthorizedError(
+        "Only admin or superadmin can delete buyer or seller accounts"
+      );
+    }
+  } else if (account.role === "superadmin") {
+    // Prevent deleting superadmin via this endpoint
+    throw new UnauthorizedError("Superadmin account cannot be deleted");
+  }
+
+  await Account.findByIdAndDelete(accountId);
+
+  res.status(200).json({
+    success: true,
+    message: `Account (${account.role}) deleted successfully`,
+  });
+
+  console.log(`${req.user.role} ${req.user.username} deleted ${account.role} account: ${account.username}`);
+});
+
 module.exports = {
   createAdminAccount,
   getAllAdminAccounts,
@@ -924,4 +963,5 @@ module.exports = {
   getUserProfile,
   updateUserProfile,
   getSellerInfo,
+  deleteAccount,
 };

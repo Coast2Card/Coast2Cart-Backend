@@ -21,6 +21,7 @@ const {
   getUserProfile,
   updateUserProfile,
   getSellerInfo,
+  deleteAccount,
 } = require("../controllers/accountController");
 
 // All routes require authentication
@@ -95,5 +96,11 @@ router.get("/sellers/:sellerId/info", getSellerInfo);
 router.get("/profile", getUserProfile);
 
 router.put("/profile", validateProfileUpdate, updateUserProfile);
+
+router.delete(
+  "/:accountId",
+  authorizeRoles("admin", "superadmin"),
+  deleteAccount
+);
 
 module.exports = router;
