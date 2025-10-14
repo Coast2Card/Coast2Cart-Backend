@@ -358,6 +358,85 @@ const resendOTP = asyncErrorHandler(async (req, res) => {
   });
 });
 
+/**
+ * Forgot Password - Send OTP for password reset
+ */
+const forgotPassword = asyncErrorHandler(async (req, res) => {
+  const { contactNo } = req.body;
+
+  const account = await Account.findOne({ contactNo });
+
+  if (!account) {
+    throw new NotFoundError("Account not found with this contact number");
+  }
+
+  // Generate OTP for password reset
+  const otp = philsmsService.generateOTP();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+  account.otp = {
+    code: otp,
+    expiresAt: expiresAt,
+  };
+  await account.save();
+
+  // Send OTP via PhilSMS
+  const smsResult = await philsmsService.sendOTP(contactNo, otp);
+
+  if (!smsResult.success) {
+    console.error("Failed to send password reset OTP:", smsResult.error);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "OTP sent successfully for password reset.",
+    smsSent: smsResult.success,
+  });
+});
+
+/**
+ * Reset Password - Verify OTP and set new password
+ */
+const resetPassword = asyncErrorHandler(async (req, res) => {
+  const { contactNo, otp, newPassword, confirmPassword } = req.body;
+
+  const account = await Account.findOne({ contactNo });
+
+  if (!account) {
+    throw new NotFoundError("Account not found with this contact number");
+  }
+
+  if (!account.otp || !account.otp.code) {
+    throw new BadRequestError("No OTP found. Please request a new one");
+  }
+
+  // Verify OTP
+  const isValidOTP = philsmsService.verifyOTP(
+    account.otp.code,
+    otp,
+    account.otp.expiresAt
+  );
+
+  if (!isValidOTP) {
+    throw new BadRequestError("Invalid or expired OTP");
+  }
+
+  // Validate password match
+  if (newPassword !== confirmPassword) {
+    throw new BadRequestError("Passwords do not match");
+  }
+
+  // Update password and clear OTP
+  account.password = newPassword;
+  account.otp = undefined;
+  await account.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Password has been reset successfully. You can now log in.",
+  });
+});
+
 module.exports = {
   buyerSignup,
   verifyOTP,
@@ -366,4 +445,6 @@ module.exports = {
   getUserProfile,
   getBuyerProfile, // Keep for backward compatibility
   resendOTP,
+  forgotPassword,
+  resetPassword,
 };

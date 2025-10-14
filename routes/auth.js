@@ -9,6 +9,8 @@ const {
   getUserProfile,
   getBuyerProfile,
   resendOTP,
+  forgotPassword,
+  resetPassword
 } = require("../controllers/authController");
 
 const {
@@ -82,5 +84,9 @@ router.get("/buyer/profile", authenticateToken, getBuyerProfile);
 
 // POST /api/auth/buyer/resend-otp
 router.post("/buyer/resend-otp", resendOTP);
+
+// Forgot Password Routes
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 
 module.exports = router;
