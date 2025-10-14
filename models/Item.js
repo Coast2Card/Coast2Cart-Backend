@@ -99,11 +99,17 @@ itemSchema.index({ catchDate: -1 });
 
 // Virtual for formatted price
 itemSchema.virtual("formattedPrice").get(function () {
+  if (!this.itemPrice || typeof this.itemPrice !== "number") {
+    return "₱0.00";
+  }
   return `₱${this.itemPrice.toFixed(2)}`;
 });
 
 // Virtual for formatted quantity with unit
 itemSchema.virtual("formattedQuantity").get(function () {
+  if (!this.quantity || !this.unit) {
+    return "0 pieces";
+  }
   return `${this.quantity} ${this.unit}`;
 });
 

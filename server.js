@@ -1,6 +1,8 @@
 require("dotenv").config();
 
 const cors = require("cors");
+const http = require("http");
+const socketIo = require("socket.io");
 
 const { connectDB, closeConnection } = require("./db/connect");
 const errorHandler = require("./middleware/errorHandler");
@@ -86,6 +88,7 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/accounts", require("./routes/accounts"));
 app.use("/api/items", require("./routes/items"));
 app.use("/api/cart", require("./routes/cart"));
+app.use("/api/chat", require("./routes/chat"));
 app.use("/api/test", require("./routes/test"));
 app.use("/api/reviews", require("./routes/reviews"));
 
@@ -98,9 +101,31 @@ const start = async () => {
     await connectDB(process.env.MONGODB_URI);
     console.log("Database connection established successfully!");
 
-    const basePort = Number(process.env.PORT) || 4000;
-    const server = app.listen(basePort, () => {
+    const basePort = Number(process.env.PORT) || 5000;
+
+    // Create HTTP server for Socket.io
+    const server = http.createServer(app);
+
+    // Socket.io setup
+    const io = socketIo(server, {
+      cors: {
+        origin: process.env.FRONTEND_URL || "http://localhost:5173",
+        methods: ["GET", "POST"],
+      },
+    });
+
+    // Import and setup socket handlers
+    const socketHandlers = require("./services/socketHandlers");
+
+    // Socket.io connection handling
+    io.on("connection", (socket) => {
+      console.log("User connected:", socket.id);
+      socketHandlers(socket, io);
+    });
+
+    server.listen(basePort, () => {
       console.log(`Server is running on port ${basePort}`);
+      console.log(`Socket.io server ready for connections`);
       console.log("Server startup completed successfully!");
     });
 
