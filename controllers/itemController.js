@@ -140,56 +140,85 @@ const getAllItems = async (req, res, next) => {
       limit = 20,
     } = req.query;
 
-    // Build filter object
-    const filter = { isActive: true };
+    // Build filter using $and with optional $or subclauses to support multi-selects
+    const andConditions = [{ isActive: true }];
 
+    // itemType normalization
     if (itemType) {
       const normalizedType = String(itemType).toLowerCase();
       if (normalizedType === "seafood") {
-        filter.itemType = "fish";
+        andConditions.push({ itemType: "fish" });
       } else if (normalizedType === "souvenir") {
-        filter.itemType = "souvenirs";
+        andConditions.push({ itemType: "souvenirs" });
       } else {
-        filter.itemType = normalizedType;
+        andConditions.push({ itemType: normalizedType });
       }
     }
 
     if (seller) {
-      filter.seller = seller;
+      andConditions.push({ seller });
     }
 
-    const isAllCategory = category && String(category).toLowerCase() === "all";
-
-    if (category && !isAllCategory) {
-      filter.category = category;
+    // Normalize category to array (accept array or comma-separated string)
+    let categoryArray = [];
+    if (Array.isArray(category)) {
+      categoryArray = category.flatMap((c) => String(c).split(",")).map((c) => c.trim()).filter(Boolean);
+    } else if (typeof category === "string") {
+      categoryArray = String(category).split(",").map((c) => c.trim()).filter(Boolean);
     }
 
-    // Handle price range filtering
-    if (priceRange) {
-      switch (priceRange) {
+    const isAllCategory = categoryArray.length > 0 && categoryArray.some((c) => c.toLowerCase() === "all");
+
+    if (categoryArray.length > 0 && !isAllCategory) {
+      andConditions.push({ category: { $in: categoryArray } });
+    }
+
+    // Handle price range filtering (accept multiple)
+    let priceRanges = [];
+    if (Array.isArray(priceRange)) {
+      priceRanges = priceRange.flatMap((p) => String(p).split(",")).map((p) => p.trim()).filter(Boolean);
+    } else if (typeof priceRange === "string") {
+      priceRanges = String(priceRange).split(",").map((p) => p.trim()).filter(Boolean);
+    }
+
+    const priceOrConditions = [];
+    for (const pr of priceRanges) {
+      switch (pr) {
         case "100-199":
-          filter.itemPrice = { $gte: 100, $lt: 200 };
+          priceOrConditions.push({ itemPrice: { $gte: 100, $lt: 200 } });
           break;
         case "200-399":
-          filter.itemPrice = { $gte: 200, $lt: 400 };
+          priceOrConditions.push({ itemPrice: { $gte: 200, $lt: 400 } });
           break;
         case "400-699":
-          filter.itemPrice = { $gte: 400, $lt: 700 };
+          priceOrConditions.push({ itemPrice: { $gte: 400, $lt: 700 } });
           break;
         case "700+":
-          filter.itemPrice = { $gte: 700 };
+          priceOrConditions.push({ itemPrice: { $gte: 700 } });
+          break;
+        case "all":
+          // ignore, equivalent to no price filter
           break;
         default:
-          return next(new BadRequestError("Invalid price range. Use: 100-199, 200-399, 400-699, or 700+"));
+          return next(new BadRequestError("Invalid price range. Use: 100-199, 200-399, 400-699, 700+, or comma-separated list"));
       }
     }
-
-    if (search) {
-      filter.$or = [
-        { itemName: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-      ];
+    if (priceOrConditions.length > 0) {
+      andConditions.push({ $or: priceOrConditions });
     }
+
+    // Search across name and description
+    if (search) {
+      andConditions.push({
+        $or: [
+          { itemName: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+        ],
+      });
+    }
+
+    // Final filter: collapse to single object when possible
+    const filter = andConditions.length === 1 ? andConditions[0] : { $and: andConditions };
 
     // Build sort object
     const sort = {};
@@ -220,13 +249,13 @@ const getAllItems = async (req, res, next) => {
       },
     };
 
-    // If a specific category is requested, include the total count for that category
-    if (category && !isAllCategory) {
+    // If a specific category (or categories) is requested and not 'all', include total for that filter
+    if (categoryArray.length > 0 && !isAllCategory) {
       responseData.categoryTotalItems = totalItems;
     }
 
     // Add category counts for seafood items when no specific category is requested
-    if (itemType === "seafood" && (!category || isAllCategory)) {
+    if (itemType === "seafood" && (categoryArray.length === 0 || isAllCategory)) {
       const categoryCounts = await Item.aggregate([
         {
           $match: {
