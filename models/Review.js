@@ -9,14 +9,14 @@ const reviewSchema = new Schema(
       ref: "Account",
       required: [true, "Please specify the buyer creating the review"],
     },
-    score: {
+    stars: {
       type: Number,
-      required: [true, "Please provide a review score"],
-      min: [1, "Score must be at least 1"],
-      max: [5, "Score cannot exceed 5"],
+      required: [true, "Please provide a review rating (stars)"],
+      min: [1, "Stars must be at least 1"],
+      max: [5, "Stars cannot exceed 5"],
       validate: {
         validator: (value) => Number.isInteger(value),
-        message: "Score must be an integer between 1 and 5",
+        message: "Stars must be an integer between 1 and 5",
       },
     },
     reviewText: {
@@ -36,7 +36,7 @@ const reviewSchema = new Schema(
 
 // Helpful indexes
 reviewSchema.index({ seller: 1, createdAt: -1 });
-reviewSchema.index({ score: -1 });
+reviewSchema.index({ stars: -1 });
 reviewSchema.index({ buyer: 1 });
 
 // Ensure virtual fields (if any in future) are serialized

@@ -7,10 +7,10 @@ const { StatusCodes } = require("http-status-codes");
 const createSellerReview = async (req, res, next) => {
   try {
     const { sellerId } = req.params;
-    const { score, reviewText } = req.body;
+    const { stars, reviewText } = req.body;
 
-    if (!score) {
-      return next(new BadRequestError("Missing required field: score"));
+    if (stars === undefined || stars === null) {
+      return next(new BadRequestError("Missing required field: stars"));
     }
 
     // Validate seller exists and is a seller
@@ -22,14 +22,14 @@ const createSellerReview = async (req, res, next) => {
       return next(new BadRequestError("Reviews can only be created for sellers"));
     }
 
-    const numericScore = Number(score);
-    if (!Number.isInteger(numericScore) || numericScore < 1 || numericScore > 5) {
-      return next(new BadRequestError("Score must be an integer between 1 and 5"));
+    const numericStars = Number(stars);
+    if (!Number.isInteger(numericStars) || numericStars < 1 || numericStars > 5) {
+      return next(new BadRequestError("Stars must be an integer between 1 and 5"));
     }
 
     const review = new Review({
       buyer: req.user?._id,
-      score: numericScore,
+      stars: numericStars,
       reviewText,
       seller: sellerId,
     });
@@ -68,7 +68,7 @@ const listSellerReviews = async (req, res, next) => {
         .sort(sort)
         .skip(skip)
         .limit(parsedLimit)
-        .select("buyer score reviewText createdAt")
+        .select("buyer stars reviewText createdAt")
         .populate({ path: "buyer", select: "username" }),
       Review.countDocuments({ seller: sellerId }),
     ]);
@@ -76,7 +76,7 @@ const listSellerReviews = async (req, res, next) => {
     const simplifiedReviews = reviews.map((r) => ({
       _id: r._id,
       buyer: r.buyer && typeof r.buyer === "object" ? r.buyer.username : r.buyer,
-      score: r.score,
+      stars: r.stars,
       reviewText: r.reviewText,
       createdAt: r.createdAt,
     }));
@@ -118,7 +118,7 @@ const listBuyerReviews = async (req, res, next) => {
         .sort(sort)
         .skip(skip)
         .limit(parsedLimit)
-        .select("seller score reviewText createdAt")
+        .select("seller stars reviewText createdAt")
         .populate({ path: "seller", select: "username" }),
       Review.countDocuments({ buyer: buyerId }),
     ]);
@@ -126,7 +126,7 @@ const listBuyerReviews = async (req, res, next) => {
     const simplifiedReviews = reviews.map((r) => ({
       _id: r._id,
       seller: r.seller && typeof r.seller === "object" ? r.seller.username : r.seller,
-      score: r.score,
+      stars: r.stars,
       reviewText: r.reviewText,
       createdAt: r.createdAt,
     }));
