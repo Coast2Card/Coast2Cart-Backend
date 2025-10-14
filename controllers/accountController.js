@@ -9,6 +9,7 @@ const {
 const asyncErrorHandler = require("../middleware/asyncErrorHandler");
 const philsmsService = require("../services/philsmsService");
 const { uploadImage } = require("../services/imageUploadService");
+const OTP = require("../models/OTP");
 
 /**
  * Create Admin Account (Superadmin only)
@@ -82,16 +83,29 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     email: email.toLowerCase(),
     password,
     role: "admin",
-    isVerified: true, // Admin accounts are auto-verified
+    isVerified: false,
     ...(profilePictureUrl && { profilePicture: profilePictureUrl }),
     ...(profilePicturePublicId && { profilePicturePublicId: profilePicturePublicId }),
   };
 
   const account = await Account.create(adminData);
 
+  // Generate OTP for admin verification (valid for 5 minutes)
+  const otpCode = philsmsService.generateOTP();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+  await OTP.create({
+    userId: account._id,
+    otp: otpCode,
+    expiresAt,
+  });
+
+  // Send OTP via PhilSMS
+  const smsResult = await philsmsService.sendOTP(normalizedContact, otpCode);
+
   res.status(201).json({
     success: true,
-    message: "Admin account created successfully",
+    message: "Admin account created successfully. Please verify via OTP sent to the contact number.",
     data: {
       adminId: account._id,
       firstName: account.firstName,
@@ -103,6 +117,7 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
       isVerified: account.isVerified,
       createdAt: account.createdAt,
       ...(account.profilePicture && { profilePicture: account.profilePicture }),
+      smsSent: !!smsResult?.success,
     },
   });
 
