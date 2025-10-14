@@ -1,6 +1,6 @@
 const { body, validationResult } = require("express-validator");
 const Account = require("../models/Accounts");
-const { BadRequestError } = require("../errors");
+const { BadRequestError, ConflictError } = require("../errors");
 
 /**
  * Handle validation errors
@@ -15,9 +15,9 @@ const handleValidationErrors = (req, res, next) => {
 };
 
 /**
- * Validation rules for buyer signup
+ * Validation rules for unified signup (buyers and sellers)
  */
-const validateBuyerSignup = [
+const validateSignup = [
   body("firstName")
     .trim()
     .notEmpty()
@@ -58,7 +58,9 @@ const validateBuyerSignup = [
       }
 
       if (age < 18) {
-        throw new Error("You must be at least 18 years old to register");
+        throw new Error(
+          "You must be at least 18 years old to register for an account."
+        );
       }
       return true;
     }),
@@ -99,6 +101,12 @@ const validateBuyerSignup = [
     return true;
   }),
 
+  body("role")
+    .notEmpty()
+    .withMessage("Role is required")
+    .isIn(["buyer", "seller"])
+    .withMessage("Role must be either 'buyer' or 'seller'"),
+
   handleValidationErrors,
 ];
 
@@ -113,6 +121,13 @@ const checkUsernameUnique = async (req, res, next) => {
     });
 
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        return next(
+          new ConflictError(
+            "An account with this username exists but is not verified. Please verify your phone number or request a new OTP."
+          )
+        );
+      }
       return next(new BadRequestError("Username already exists"));
     }
 
@@ -131,6 +146,13 @@ const checkEmailUnique = async (req, res, next) => {
     const existingUser = await Account.findOne({ email: email.toLowerCase() });
 
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        return next(
+          new ConflictError(
+            "An account with this email exists but is not verified. Please verify your phone number or request a new OTP."
+          )
+        );
+      }
       return next(new BadRequestError("Email already exists"));
     }
 
@@ -149,6 +171,13 @@ const checkContactUnique = async (req, res, next) => {
     const existingUser = await Account.findOne({ contactNo });
 
     if (existingUser) {
+      if (!existingUser.isVerified) {
+        return next(
+          new ConflictError(
+            "An account with this contact number exists but is not verified. Please verify your phone number or request a new OTP."
+          )
+        );
+      }
       return next(new BadRequestError("Contact number already exists"));
     }
 
@@ -311,8 +340,80 @@ const validateSellItem = [
   handleValidationErrors,
 ];
 
+/**
+ * Validation rules for profile updates
+ */
+const validateProfileUpdate = [
+  body("firstName")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage("First name must be between 2 and 50 characters"),
+
+  body("lastName")
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage("Last name must be between 2 and 50 characters"),
+
+  body("username")
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 30 })
+    .withMessage("Username must be between 3 and 30 characters")
+    .matches(/^[a-zA-Z0-9_]+$/)
+    .withMessage("Username can only contain letters, numbers, and underscores"),
+
+  body("dateOfBirth")
+    .optional()
+    .isISO8601()
+    .withMessage("Please provide a valid date of birth")
+    .custom((value) => {
+      const birthDate = new Date(value);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+
+      if (
+        monthDiff < 0 ||
+        (monthDiff === 0 && today.getDate() < birthDate.getDate())
+      ) {
+        age--;
+      }
+
+      if (age < 18) {
+        throw new Error(
+          "You must be at least 18 years old to create an account."
+        );
+      }
+      return true;
+    }),
+
+  body("contactNo")
+    .optional()
+    .trim()
+    .matches(/^9\d{9}$/)
+    .withMessage(
+      "Please provide a valid Philippine phone number starting with 9 (e.g., 9123456789)"
+    ),
+
+  body("address")
+    .optional()
+    .trim()
+    .isLength({ min: 10, max: 200 })
+    .withMessage("Address must be between 10 and 200 characters"),
+
+  body("email")
+    .optional()
+    .isEmail()
+    .withMessage("Please provide a valid email")
+    .normalizeEmail(),
+
+  handleValidationErrors,
+];
+
 module.exports = {
-  validateBuyerSignup,
+  validateSignup, // Unified signup validation
   checkUsernameUnique,
   checkEmailUnique,
   checkContactUnique,
@@ -321,5 +422,6 @@ module.exports = {
   validateItemCreation,
   validateItemUpdate,
   validateSellItem,
+  validateProfileUpdate,
   handleValidationErrors,
 };
