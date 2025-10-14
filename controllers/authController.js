@@ -1,5 +1,6 @@
 const Account = require("../models/Accounts");
 const OTP = require("../models/OTP");
+const jwt = require("jsonwebtoken");
 const {
   BadRequestError,
   UnauthenticatedError,
@@ -57,6 +58,24 @@ const normalizeEmail = (email) => {
  * Unified Signup (for buyers and sellers)
  */
 const signup = asyncErrorHandler(async (req, res) => {
+  // If a Bearer token is provided and belongs to an admin/superadmin,
+  // we will tailor the success message accordingly (seller creation by admin)
+  let isAdminCreator = false;
+  try {
+    const authHeader = req.headers && req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1];
+    if (token) {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded && decoded.userId) {
+        const creator = await Account.findById(decoded.userId).select("role isVerified");
+        if (creator && creator.isVerified && (creator.role === "admin" || creator.role === "superadmin")) {
+          isAdminCreator = true;
+        }
+      }
+    }
+  } catch (_) {
+    // Ignore token issues for public signup; proceed as unauthenticated creator
+  }
   const {
     firstName,
     lastName,
@@ -140,10 +159,14 @@ const signup = asyncErrorHandler(async (req, res) => {
     console.error("Failed to send OTP:", smsResult.error);
   }
 
-  // Prepare response message based on role
+  // Prepare response message based on role and creator
   let message = "Account created successfully. Please verify your phone number with the OTP sent.";
   if (role === "seller") {
-    message += " After verification, your seller account will be reviewed by an administrator for approval.";
+    if (isAdminCreator) {
+      message = "Seller account created successfully. An OTP was sent to the seller's phone for verification. After verification, the account will be reviewed by an administrator for approval.";
+    } else {
+      message += " After verification, your seller account will be reviewed by an administrator for approval.";
+    }
   }
 
   res.status(201).json({
