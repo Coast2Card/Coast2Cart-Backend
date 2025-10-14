@@ -20,7 +20,7 @@ Get all active items with optional filtering and pagination.
 
 **Query Parameters:**
 
-- `itemType` (optional): Filter by item type (`fish`, `souvenirs`, `food`)
+- `itemType` (optional): Filter by item type (`fish`, `souvenirs`)
 - `seller` (optional): Filter by seller ID
 - `search` (optional): Search in item name and description
 - `sortBy` (optional): Sort field (`catchDate`, `itemPrice`, `itemName`) - default: `catchDate`
@@ -146,7 +146,7 @@ Content-Type: multipart/form-data
 
 **Body (Form Data):**
 
-- `itemType` (required): Item type (`fish`, `souvenirs`, `food`)
+- `itemType` (required): Item type (`fish`, `souvenirs`)
 - `itemName` (required): Item name (2-100 characters)
 - `itemPrice` (required): Item price (positive number)
 - `quantity` (required): Available quantity (non-negative number)
@@ -361,7 +361,6 @@ All endpoints return consistent error responses:
 
 - `fish`: Fresh seafood and fish
 - `souvenirs`: Hand-crafted items and local products
-- `food`: Processed food items
 
 **Units:**
 

@@ -54,7 +54,7 @@ Content-Type: multipart/form-data
 
 **Body (Form Data):**
 
-- `itemType` (required): `fish`, `souvenirs`, or `food`
+- `itemType` (required): `fish` or `souvenirs`
 - `itemName` (required): Item name (2-100 characters)
 - `itemPrice` (required): Positive number
 - `quantity` (required): Non-negative number

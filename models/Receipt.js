@@ -22,7 +22,7 @@ const receiptSchema = new Schema(
     itemType: {
       type: String,
       required: true,
-      enum: ["fish", "souvenirs", "food"],
+      enum: ["fish", "souvenirs"],
     },
     itemName: {
       type: String,
