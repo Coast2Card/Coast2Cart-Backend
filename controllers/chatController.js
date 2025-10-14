@@ -12,11 +12,15 @@ const {
 // Create or get chat room between two users
 const createOrGetChatRoom = async (req, res) => {
   const { participantId, itemId } = req.body;
-  const userId = req.user.userId;
+  const userId = req.user?.userId || req.user?._id;
 
   // Validate inputs
   if (!participantId) {
     throw new BadRequestError("Participant ID is required");
+  }
+
+  if (!userId) {
+    throw new UnauthorizedError("User authentication failed");
   }
 
   if (participantId.toString() === userId.toString()) {
