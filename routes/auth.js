@@ -6,6 +6,8 @@ const {
   verifyOTP,
   login,
   resendOTP,
+  requestPasswordReset,
+  resetPassword,
 } = require("../controllers/authController");
 
 const {
@@ -15,6 +17,8 @@ const {
   checkContactUnique,
   validateOTP,
   validateLogin,
+  validateForgotPassword,
+  validateResetPassword,
 } = require("../middleware/validation");
 
 const { authenticateToken } = require("../middleware/auth");
@@ -39,5 +43,11 @@ router.post("/login", validateLogin, login);
 
 // POST /api/auth/resend-otp (Unified OTP resend for buyers and sellers)
 router.post("/resend-otp", resendOTP);
+
+// POST /api/auth/forgot-password (request password reset via OTP)
+router.post("/forgot-password", validateForgotPassword, requestPasswordReset);
+
+// POST /api/auth/reset-password (verify OTP and set new password)
+router.post("/reset-password", validateResetPassword, resetPassword);
 
 module.exports = router;

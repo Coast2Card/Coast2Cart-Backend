@@ -385,6 +385,7 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
         : "unverified";
 
     return {
+      id: acct._id,
       fullName,
       email: acct.email,
       contactNo,
@@ -910,6 +911,83 @@ const updateUserProfile = asyncErrorHandler(async (req, res) => {
   console.log(`User ${userAccount.username} updated their profile`);
 });
 
+/**
+ * Delete Account (Admin/Superadmin only for buyers/sellers; Superadmin only for admins)
+ */
+const deleteAccount = asyncErrorHandler(async (req, res) => {
+  const { accountId } = req.params;
+
+  const account = await Account.findById(accountId);
+  if (!account) {
+    throw new NotFoundError("Account not found");
+  }
+
+  // Enforce role-based deletion
+  const requesterRole = req.user.role;
+
+  if (account.role === "admin") {
+    if (requesterRole !== "superadmin") {
+      throw new UnauthorizedError("Only superadmin can delete admin accounts");
+    }
+  } else if (account.role === "buyer" || account.role === "seller") {
+    if (!(requesterRole === "admin" || requesterRole === "superadmin")) {
+      throw new UnauthorizedError(
+        "Only admin or superadmin can delete buyer or seller accounts"
+      );
+    }
+  } else if (account.role === "superadmin") {
+    // Prevent deleting superadmin via this endpoint
+    throw new UnauthorizedError("Superadmin account cannot be deleted");
+  }
+
+  await Account.findByIdAndDelete(accountId);
+
+  res.status(200).json({
+    success: true,
+    message: `Account (${account.role}) deleted successfully`,
+  });
+
+  console.log(`${req.user.role} ${req.user.username} deleted ${account.role} account: ${account.username}`);
+});
+
+/**
+ * Get Specific Account by ID
+ * - Public for buyer/seller
+ * - Requires auth for admin/superadmin
+ */
+const getAccountById = asyncErrorHandler(async (req, res) => {
+  const { accountId } = req.params;
+
+  const account = await Account.findById(accountId).select("-password -otp");
+  if (!account) {
+    throw new NotFoundError("Account not found");
+  }
+
+  if (account.role === "admin" || account.role === "superadmin") {
+    if (!req.user) {
+      throw new UnauthenticatedError("Authentication required to view this account");
+    }
+  }
+
+  // Minimal public data for buyer/seller; full safe fields otherwise
+  const publicData = {
+    id: account._id,
+    firstName: account.firstName,
+    lastName: account.lastName,
+    username: account.username,
+    email: account.email,
+    contactNo: account.contactNo,
+    address: account.address,
+    dateOfBirth: account.dateOfBirth,
+    role: account.role,
+    isVerified: account.isVerified,
+    createdAt: account.createdAt,
+    ...(account.profilePicture && { profilePicture: account.profilePicture }),
+  };
+
+  res.status(200).json({ success: true, data: { account: publicData } });
+});
+
 module.exports = {
   createAdminAccount,
   getAllAdminAccounts,
@@ -924,4 +1002,6 @@ module.exports = {
   getUserProfile,
   updateUserProfile,
   getSellerInfo,
+  deleteAccount,
+  getAccountById,
 };

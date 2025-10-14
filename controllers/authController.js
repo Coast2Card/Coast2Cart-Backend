@@ -418,10 +418,85 @@ const resendOTP = asyncErrorHandler(async (req, res) => {
   });
 });
 
+/**
+ * Request Password Reset (send OTP to contact number)
+ */
+const requestPasswordReset = asyncErrorHandler(async (req, res) => {
+  const { contactNo } = req.body;
+  const normalizedContact = philsmsService.normalizePhContact(contactNo);
+
+  // Find account by contact number
+  const account = await Account.findOne({ contactNo: normalizedContact });
+  if (!account) {
+    // Explicitly inform client that the number does not correspond to any account
+    throw new NotFoundError("Account not found with this contact number");
+  }
+
+  // Generate new OTP
+  const otpCode = philsmsService.generateOTP();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+
+  // Delete any existing OTPs for this user and create new one
+  await OTP.deleteMany({ userId: account._id });
+  await OTP.create({
+    userId: account._id,
+    otp: otpCode,
+    expiresAt,
+  });
+
+  // Send OTP via PhilSMS
+  const smsResult = await philsmsService.sendOTP(normalizedContact, otpCode);
+  if (!smsResult.success) {
+    console.error("Failed to send reset OTP:", smsResult.error);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: "An OTP has been sent to the registered phone number.",
+    smsSent: smsResult.success,
+  });
+});
+
+/**
+ * Reset Password (verify OTP and set new password)
+ */
+const resetPassword = asyncErrorHandler(async (req, res) => {
+  const { contactNo, otp, newPassword } = req.body;
+  const normalizedContact = philsmsService.normalizePhContact(contactNo);
+
+  // Find account
+  const account = await Account.findOne({ contactNo: normalizedContact });
+  if (!account) {
+    return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+  }
+
+  // Find latest OTP
+  const otpRecord = await OTP.findOne({ userId: account._id }).sort({ createdAt: -1 });
+  if (!otpRecord) {
+    return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+  }
+
+  const isValidOTP = philsmsService.verifyOTP(otpRecord.otp, otp, otpRecord.expiresAt);
+  if (!isValidOTP) {
+    return res.status(400).json({ success: false, message: "Invalid or expired OTP" });
+  }
+
+  // Update password
+  account.password = newPassword;
+  await account.save();
+
+  // Delete the used OTP
+  await OTP.findByIdAndDelete(otpRecord._id);
+
+  res.status(200).json({ success: true, message: "Password has been reset successfully" });
+});
+
 
 module.exports = {
   signup, // Unified signup for buyers and sellers
   verifyOTP,
   login,
   resendOTP,
+  requestPasswordReset,
+  resetPassword,
 };

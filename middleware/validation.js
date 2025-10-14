@@ -227,6 +227,62 @@ const validateLogin = [
 ];
 
 /**
+ * Validation rules for forgot password (request reset)
+ */
+const validateForgotPassword = [
+  body("contactNo")
+    .trim()
+    .notEmpty()
+    .withMessage("Contact number is required")
+    .matches(/^(?:\+?63|0)?9\d{9}$/)
+    .withMessage(
+      "Please provide a valid Philippine phone number (e.g., 9123456789, 09123456789, +639123456789)"
+    ),
+
+  handleValidationErrors,
+];
+
+/**
+ * Validation rules for reset password (verify OTP and set new password)
+ */
+const validateResetPassword = [
+  body("contactNo")
+    .trim()
+    .notEmpty()
+    .withMessage("Contact number is required")
+    .matches(/^(?:\+?63|0)?9\d{9}$/)
+    .withMessage(
+      "Please provide a valid Philippine phone number (e.g., 9123456789, 09123456789, +639123456789)"
+    ),
+
+  body("otp")
+    .trim()
+    .notEmpty()
+    .withMessage("OTP is required")
+    .isLength({ min: 6, max: 6 })
+    .withMessage("OTP must be 6 digits")
+    .isNumeric()
+    .withMessage("OTP must contain only numbers"),
+
+  body("newPassword")
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters long")
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
+    .withMessage(
+      "Password must contain at least one lowercase letter, one uppercase letter, and one number"
+    ),
+
+  body("confirmPassword").custom((value, { req }) => {
+    if (value !== req.body.newPassword) {
+      throw new Error("Password confirmation does not match new password");
+    }
+    return true;
+  }),
+
+  handleValidationErrors,
+];
+
+/**
  * Validation rules for item creation
  */
 const validateItemCreation = [
@@ -461,4 +517,6 @@ module.exports = {
   validateSellItem,
   validateProfileUpdate,
   handleValidationErrors,
+  validateForgotPassword,
+  validateResetPassword,
 };
