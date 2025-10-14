@@ -380,8 +380,7 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
       : "";
     const status =
       acct.role === "seller"
-        ? acct.sellerApprovalStatus ||
-          (acct.isVerified ? "verified" : "unverified")
+        ? acct.sellerStatus || "pending_otp"
         : acct.isVerified
         ? "verified"
         : "unverified";
@@ -440,11 +439,10 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
 const getPendingSellerApprovals = asyncErrorHandler(async (req, res) => {
   const { page = 1, limit = 10, search = "" } = req.query;
 
-  // Build search query for pending sellers
+  // Build search query for pending sellers (OTP verified, waiting for admin approval)
   const searchQuery = {
     role: "seller",
-    sellerApprovalStatus: "pending",
-    isVerified: true, // Only show verified accounts
+    sellerStatus: "pending_admin", // OTP verified, waiting for admin approval
     ...(search && {
       $or: [
         { firstName: { $regex: search, $options: "i" } },
@@ -534,7 +532,7 @@ const updateSellerApprovalStatus = asyncErrorHandler(async (req, res) => {
   const sellerAccount = await Account.findOne({
     _id: sellerId,
     role: "seller",
-    sellerApprovalStatus: "pending",
+    sellerStatus: { $in: ["pending_admin", "pending_otp_admin"] }, // Can approve from either status
   });
 
   if (!sellerAccount) {
@@ -545,6 +543,14 @@ const updateSellerApprovalStatus = asyncErrorHandler(async (req, res) => {
   sellerAccount.sellerApprovalStatus = status;
   sellerAccount.approvedBy = req.user._id;
   sellerAccount.approvedAt = new Date();
+  
+  // Update seller status based on OTP verification and admin approval
+  if (status === "approved") {
+    sellerAccount.updateSellerStatus(sellerAccount.isVerified, true);
+  } else if (status === "rejected") {
+    sellerAccount.sellerStatus = "rejected";
+  }
+  
   await sellerAccount.save();
 
   const action = status === "approved" ? "approved" : "rejected";
@@ -561,6 +567,7 @@ const updateSellerApprovalStatus = asyncErrorHandler(async (req, res) => {
         username: sellerAccount.username,
         email: sellerAccount.email,
         sellerApprovalStatus: sellerAccount.sellerApprovalStatus,
+        sellerStatus: sellerAccount.sellerStatus,
         approvedBy: sellerAccount.approvedBy,
         approvedAt: sellerAccount.approvedAt,
       },
@@ -657,6 +664,7 @@ const createSellerAccount = asyncErrorHandler(async (req, res) => {
     password,
     role: "seller",
     isVerified: false,
+    sellerStatus: "pending_otp", // Admin-created sellers: admin approved, waiting for OTP verification
     ...(profilePictureUrl && { profilePicture: profilePictureUrl }),
     ...(profilePicturePublicId && {
       profilePicturePublicId: profilePicturePublicId,
@@ -692,6 +700,7 @@ const createSellerAccount = asyncErrorHandler(async (req, res) => {
       role: account.role,
       isVerified: account.isVerified,
       sellerApprovalStatus: account.sellerApprovalStatus,
+      sellerStatus: account.sellerStatus,
       createdAt: account.createdAt,
       ...(account.profilePicture && { profilePicture: account.profilePicture }),
       smsSent: !!smsResult?.success,
@@ -754,6 +763,10 @@ const verifySellerOTP = asyncErrorHandler(async (req, res) => {
   sellerAccount.sellerApprovalStatus = "approved";
   sellerAccount.approvedBy = req.user._id;
   sellerAccount.approvedAt = new Date();
+  
+  // Update seller status: OTP verified + Admin approved = Validated
+  sellerAccount.updateSellerStatus(true, true);
+  
   await sellerAccount.save();
 
   // Delete the used OTP
@@ -774,6 +787,7 @@ const verifySellerOTP = asyncErrorHandler(async (req, res) => {
         role: sellerAccount.role,
         isVerified: sellerAccount.isVerified,
         sellerApprovalStatus: sellerAccount.sellerApprovalStatus,
+        sellerStatus: sellerAccount.sellerStatus,
         approvedBy: sellerAccount.approvedBy,
         approvedAt: sellerAccount.approvedAt,
       },

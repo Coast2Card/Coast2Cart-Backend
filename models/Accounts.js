@@ -69,6 +69,17 @@ const accountSchema = new Schema(
       type: String,
       enum: ["pending", "approved", "rejected"],
     },
+    sellerStatus: {
+      type: String,
+      enum: [
+        "pending_otp",           // Account created, waiting for OTP verification
+        "pending_admin",         // OTP verified, waiting for admin approval
+        "pending_otp_admin",     // Admin approved, waiting for OTP verification
+        "validated",             // Both OTP and admin approval completed
+        "rejected"               // Rejected by admin
+      ],
+      default: "pending_otp",
+    },
     approvedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Account",
@@ -101,9 +112,11 @@ accountSchema.pre("save", async function (next) {
   if (this.isModified("role")) {
     if (this.role === "seller") {
       this.sellerApprovalStatus = "pending";
+      // sellerStatus will be set explicitly in the creation logic
     } else {
       // Clear seller approval fields for non-sellers
       this.sellerApprovalStatus = undefined;
+      this.sellerStatus = undefined;
       this.approvedBy = undefined;
       this.approvedAt = undefined;
     }
@@ -130,6 +143,25 @@ accountSchema.methods.isAdult = function () {
   }
 
   return age >= 18;
+};
+
+/**
+ * Update seller status based on OTP verification and admin approval
+ * @param {boolean} isOTPVerified - Whether OTP is verified
+ * @param {boolean} isAdminApproved - Whether admin has approved
+ */
+accountSchema.methods.updateSellerStatus = function(isOTPVerified, isAdminApproved) {
+  if (this.role !== "seller") return;
+  
+  if (isOTPVerified && isAdminApproved) {
+    this.sellerStatus = "validated";
+  } else if (isOTPVerified && !isAdminApproved) {
+    this.sellerStatus = "pending_admin"; // OTP verified, waiting for admin approval
+  } else if (!isOTPVerified && isAdminApproved) {
+    this.sellerStatus = "pending_otp"; // Admin approved, waiting for OTP verification
+  } else {
+    this.sellerStatus = "pending_otp_admin"; // Waiting for both OTP and admin approval
+  }
 };
 
 module.exports = mongoose.model("Account", accountSchema);

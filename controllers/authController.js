@@ -139,6 +139,17 @@ const signup = asyncErrorHandler(async (req, res) => {
     isVerified: false,
   };
 
+  // Set seller status based on creation method
+  if (role === "seller") {
+    if (isAdminCreator) {
+      // Admin-created seller: pending_otp (admin approved, waiting for OTP verification)
+      accountData.sellerStatus = "pending_otp";
+    } else {
+      // Signup-created seller: pending_otp_admin (waiting for both OTP and admin approval)
+      accountData.sellerStatus = "pending_otp_admin";
+    }
+  }
+
   const account = await Account.create(accountData);
 
   // Generate OTP
@@ -223,6 +234,12 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
 
   // Mark account as verified and delete the OTP record
   account.isVerified = true;
+  
+  // Update seller status if this is a seller account
+  if (account.role === "seller") {
+    account.updateSellerStatus(true, account.sellerApprovalStatus === "approved");
+  }
+  
   await account.save();
   
   // Delete the used OTP
@@ -242,6 +259,11 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
   if (account.role === "buyer") {
     userData.address = account.address;
     userData.dateOfBirth = account.dateOfBirth;
+  }
+  
+  if (account.role === "seller") {
+    userData.sellerApprovalStatus = account.sellerApprovalStatus;
+    userData.sellerStatus = account.sellerStatus;
   }
 
   // For seller accounts, do NOT return a token
