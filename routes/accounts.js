@@ -20,6 +20,7 @@ const {
   updateSellerApprovalStatus,
   getUserProfile,
   updateUserProfile,
+  getSellerInfo,
 } = require("../controllers/accountController");
 
 // All routes require authentication
@@ -87,6 +88,9 @@ router.put(
   authorizeRoles("admin", "superadmin"),
   updateSellerApprovalStatus
 );
+
+// Public seller info for authenticated users
+router.get("/sellers/:sellerId/info", getSellerInfo);
 
 router.get("/profile", getUserProfile);
 
