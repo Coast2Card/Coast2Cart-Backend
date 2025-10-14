@@ -39,6 +39,7 @@ const createItem = async (req, res, next) => {
       itemPrice,
       quantity,
       unit,
+      category,
       description,
       location,
     } = req.body;
@@ -89,6 +90,8 @@ const createItem = async (req, res, next) => {
       itemPrice: parsedPrice,
       quantity: parsedQuantity,
       unit,
+      // Only saved when provided; schema enforces requirement when itemType is 'fish'
+      category,
       image: cloudinaryResult.url, // Cloudinary URL from service
       imagePublicId: cloudinaryResult.publicId, // Store public ID for future operations
       description,
