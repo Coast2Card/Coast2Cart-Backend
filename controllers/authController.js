@@ -11,7 +11,7 @@ const philsmsService = require("../services/philsmsService");
 
 /**
  * Buyer Signup
- */
+ */ 
 const buyerSignup = asyncErrorHandler(async (req, res) => {
   const {
     firstName,
@@ -154,7 +154,7 @@ const login = asyncErrorHandler(async (req, res) => {
   }
 
   // Generate JWT token
-  const token = generateToken(account._id);
+  const token = generateToken(account._id, account.role);
 
   // Prepare user data based on account type
   const userData = {
@@ -227,7 +227,7 @@ const buyerLogin = asyncErrorHandler(async (req, res) => {
   }
 
   // Generate JWT token
-  const token = generateToken(account._id);
+  const token = generateToken(account._id, account.role);
 
   res.status(200).json({
     success: true,

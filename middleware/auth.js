@@ -47,13 +47,13 @@ const authenticateToken = async (req, res, next) => {
 /**
  * Middleware to check if user has specific role
  */
-const authorizeRoles = (...roles) => {
+const authorizeRoles = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.user) {
       return next(new UnauthenticatedError("Authentication required"));
     }
 
-    if (!roles.includes(req.user.role)) {
+    if (!allowedRoles.includes(req.user.role)) {
       return next(new UnauthenticatedError("Insufficient permissions"));
     }
 
@@ -65,7 +65,7 @@ const authorizeRoles = (...roles) => {
  * Generate JWT token
  */
 const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign({ userId, role }, process.env.JWT_SECRET, { expiresIn: "7d" });
 };
 
 module.exports = {

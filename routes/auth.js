@@ -24,6 +24,17 @@ const { authenticateToken } = require("../middleware/auth");
 
 // Buyer Authentication Routes
 
+// Protected profile routes
+router.get("/profile", authenticateToken, getUserProfile);
+
+// Buyer-only route
+router.get(
+  "/buyer/profile",
+  authenticateToken,
+  authorizeRoles("buyer"),
+  getBuyerProfile
+);
+
 // POST /api/auth/buyer/signup
 router.post(
   "/buyer/signup",
@@ -32,6 +43,26 @@ router.post(
   checkEmailUnique,
   checkContactUnique,
   buyerSignup
+);
+
+// Admin-only route
+router.get(
+  "/admin/dashboard",
+  authenticateToken,
+  authorizeRoles("admin"),
+  (req, res) => {
+    res.status(200).json({ message: "Welcome to the admin dashboard" });
+  }
+);
+
+// Seller and admin shared route
+router.get(
+  "/seller/reports",
+  authenticateToken,
+  authorizeRoles("seller", "admin"),
+  (req, res) => {
+    res.status(200).json({ message: "Accessing seller reports" });
+  } 
 );
 
 // POST /api/auth/buyer/verify-otp
