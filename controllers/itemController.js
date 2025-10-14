@@ -146,7 +146,7 @@ const getAllItems = async (req, res, next) => {
     if (itemType) {
       const normalizedType = String(itemType).toLowerCase();
       if (normalizedType === "seafood") {
-        filter.itemType = { $in: ["fish", "food"] };
+        filter.itemType = "fish";
       } else if (normalizedType === "souvenir") {
         filter.itemType = "souvenirs";
       } else {
@@ -218,13 +218,18 @@ const getAllItems = async (req, res, next) => {
       },
     };
 
+    // If a specific category is requested, include the total count for that category
+    if (category) {
+      responseData.categoryTotalItems = totalItems;
+    }
+
     // Add category counts for seafood items when no specific category is requested
     if (itemType === "seafood" && !category) {
       const categoryCounts = await Item.aggregate([
         {
           $match: {
             isActive: true,
-            itemType: { $in: ["fish", "food"] },
+            itemType: "fish",
             category: { $exists: true, $ne: null }
           }
         },

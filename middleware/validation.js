@@ -234,13 +234,13 @@ const validateItemCreation = [
     .trim()
     .notEmpty()
     .withMessage("Item type is required")
-    .isIn(["fish", "souvenirs", "food"])
-    .withMessage("Item type must be 'fish', 'souvenirs', or 'food'"),
+    .isIn(["fish", "souvenirs"])
+    .withMessage("Item type must be 'fish' or 'souvenirs'"),
 
   body("category")
-    .if(body("itemType").isIn(["fish", "food"]))
+    .if(body("itemType").isIn(["fish"]))
     .notEmpty()
-    .withMessage("Category is required for fish or food items")
+    .withMessage("Category is required for fish items")
     .isIn([
       "Fresh Fish",
       "Shrimp & Prawns",
@@ -298,16 +298,15 @@ const validateItemUpdate = [
   body("itemType")
     .optional()
     .trim()
-    .isIn(["fish", "souvenirs", "food"])
-    .withMessage("Item type must be 'fish', 'souvenirs', or 'food'"),
+    .isIn(["fish", "souvenirs"])
+    .withMessage("Item type must be 'fish' or 'souvenirs'"),
 
   body("category")
     .optional({ values: "falsy" })
     .if(body("itemType").custom((val, { req }) => {
-      // If updating type to fish/food OR current itemType is fish/food, require valid category when provided
-      const incomingType = val; // not used here, category field's value
+      // If updating type to fish OR current itemType is fish, require valid category when provided
       const type = req.body.itemType;
-      return type ? ["fish", "food"].includes(type) : true;
+      return type ? ["fish"].includes(type) : true;
     }))
     .isIn([
       "Fresh Fish",
