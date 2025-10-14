@@ -8,6 +8,7 @@ const {
 } = require("../errors");
 const asyncErrorHandler = require("../middleware/asyncErrorHandler");
 const philsmsService = require("../services/philsmsService");
+const { uploadImage } = require("../services/imageUploadService");
 
 /**
  * Create Admin Account (Superadmin only)
@@ -53,6 +54,23 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     throw new ConflictError("Contact number already exists");
   }
 
+  // Handle optional profile picture upload
+  let profilePictureUrl = null;
+  let profilePicturePublicId = null;
+  
+  if (req.file) {
+    try {
+      const cloudinaryResult = await uploadImage(req.file, {
+        folder: "coast2cart/profiles",
+      });
+      profilePictureUrl = cloudinaryResult.url;
+      profilePicturePublicId = cloudinaryResult.publicId;
+    } catch (uploadError) {
+      console.error("Profile picture upload failed:", uploadError);
+      throw new BadRequestError("Failed to upload profile picture. Please try again.");
+    }
+  }
+
   // Create admin account data
   const adminData = {
     firstName,
@@ -65,6 +83,8 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     password,
     role: "admin",
     isVerified: true, // Admin accounts are auto-verified
+    ...(profilePictureUrl && { profilePicture: profilePictureUrl }),
+    ...(profilePicturePublicId && { profilePicturePublicId: profilePicturePublicId }),
   };
 
   const account = await Account.create(adminData);
@@ -82,6 +102,7 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
       role: account.role,
       isVerified: account.isVerified,
       createdAt: account.createdAt,
+      ...(account.profilePicture && { profilePicture: account.profilePicture }),
     },
   });
 

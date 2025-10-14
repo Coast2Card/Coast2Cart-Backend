@@ -75,6 +75,12 @@ const accountSchema = new Schema(
     approvedAt: {
       type: Date,
     },
+    profilePicture: {
+      type: String, // Cloudinary URL
+    },
+    profilePicturePublicId: {
+      type: String, // Cloudinary public ID for deletion
+    },
   },
   { timestamps: true }
 );

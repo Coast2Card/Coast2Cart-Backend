@@ -6,6 +6,8 @@ const {
 } = require("../middleware/auth");
 const { UnauthorizedError } = require("../errors");
 const { validateProfileUpdate } = require("../middleware/validation");
+const { uploadSingle } = require("../middleware/upload");
+const { validateMulterImageOptional } = require("../middleware/validateMulterImage");
 const {
   createAdminAccount,
   getAllAdminAccounts,
@@ -23,7 +25,13 @@ const {
 router.use(authenticateToken);
 
 
-router.post("/admin", authorizeRoles("superadmin"), createAdminAccount);
+router.post(
+  "/admin",
+  authorizeRoles("superadmin"),
+  uploadSingle,
+  validateMulterImageOptional,
+  createAdminAccount
+);
 
 router.get("/admin", authorizeRoles("superadmin"), getAllAdminAccounts);
 
