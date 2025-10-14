@@ -62,6 +62,30 @@ const authorizeRoles = (...roles) => {
 };
 
 /**
+ * Middleware to optionally authenticate JWT token (proceeds if absent/invalid)
+ */
+const optionalAuthenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.split(" ")[1]; // Bearer TOKEN
+
+    if (!token) {
+      return next();
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await Account.findById(decoded.userId).select("-password -otp");
+    if (user && user.isVerified) {
+      req.user = { ...user.toObject(), id: user._id };
+    }
+    return next();
+  } catch (_) {
+    // Ignore errors and continue unauthenticated
+    return next();
+  }
+};
+
+/**
  * Generate JWT token
  */
 const generateToken = (userId) => {
@@ -72,4 +96,5 @@ module.exports = {
   authenticateToken,
   authorizeRoles,
   generateToken,
+  optionalAuthenticate,
 };

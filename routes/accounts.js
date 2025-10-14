@@ -22,7 +22,9 @@ const {
   updateUserProfile,
   getSellerInfo,
   deleteAccount,
+  getAccountById,
 } = require("../controllers/accountController");
+const { optionalAuthenticate } = require("../middleware/auth");
 
 // All routes require authentication
 router.use(authenticateToken);
@@ -102,5 +104,8 @@ router.delete(
   authorizeRoles("admin", "superadmin"),
   deleteAccount
 );
+
+// Public/admin-mixed route: get specific account
+router.get("/:accountId", optionalAuthenticate, getAccountById);
 
 module.exports = router;

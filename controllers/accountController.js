@@ -385,6 +385,7 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
         : "unverified";
 
     return {
+      id: acct._id,
       fullName,
       email: acct.email,
       contactNo,
@@ -949,6 +950,44 @@ const deleteAccount = asyncErrorHandler(async (req, res) => {
   console.log(`${req.user.role} ${req.user.username} deleted ${account.role} account: ${account.username}`);
 });
 
+/**
+ * Get Specific Account by ID
+ * - Public for buyer/seller
+ * - Requires auth for admin/superadmin
+ */
+const getAccountById = asyncErrorHandler(async (req, res) => {
+  const { accountId } = req.params;
+
+  const account = await Account.findById(accountId).select("-password -otp");
+  if (!account) {
+    throw new NotFoundError("Account not found");
+  }
+
+  if (account.role === "admin" || account.role === "superadmin") {
+    if (!req.user) {
+      throw new UnauthenticatedError("Authentication required to view this account");
+    }
+  }
+
+  // Minimal public data for buyer/seller; full safe fields otherwise
+  const publicData = {
+    id: account._id,
+    firstName: account.firstName,
+    lastName: account.lastName,
+    username: account.username,
+    email: account.email,
+    contactNo: account.contactNo,
+    address: account.address,
+    dateOfBirth: account.dateOfBirth,
+    role: account.role,
+    isVerified: account.isVerified,
+    createdAt: account.createdAt,
+    ...(account.profilePicture && { profilePicture: account.profilePicture }),
+  };
+
+  res.status(200).json({ success: true, data: { account: publicData } });
+});
+
 module.exports = {
   createAdminAccount,
   getAllAdminAccounts,
@@ -964,4 +1003,5 @@ module.exports = {
   updateUserProfile,
   getSellerInfo,
   deleteAccount,
+  getAccountById,
 };
