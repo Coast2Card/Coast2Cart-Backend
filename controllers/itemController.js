@@ -158,7 +158,9 @@ const getAllItems = async (req, res, next) => {
       filter.seller = seller;
     }
 
-    if (category) {
+    const isAllCategory = category && String(category).toLowerCase() === "all";
+
+    if (category && !isAllCategory) {
       filter.category = category;
     }
 
@@ -219,12 +221,12 @@ const getAllItems = async (req, res, next) => {
     };
 
     // If a specific category is requested, include the total count for that category
-    if (category) {
+    if (category && !isAllCategory) {
       responseData.categoryTotalItems = totalItems;
     }
 
     // Add category counts for seafood items when no specific category is requested
-    if (itemType === "seafood" && !category) {
+    if (itemType === "seafood" && (!category || isAllCategory)) {
       const categoryCounts = await Item.aggregate([
         {
           $match: {
