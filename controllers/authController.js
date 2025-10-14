@@ -12,6 +12,29 @@ const asyncErrorHandler = require("../middleware/asyncErrorHandler");
 const { generateToken } = require("../middleware/auth");
 const philsmsService = require("../services/philsmsService");
 
+// Derive permissions from current route authorizations
+const getPermissionsForRole = (role) => {
+  if (role === "superadmin") {
+    return [
+      "CREATE_ADMIN_ACCOUNT",
+      "VIEW_ADMIN_ACCOUNTS",
+      "UPDATE_ADMIN_ACCOUNT",
+      "DELETE_ADMIN_ACCOUNT",
+      "VIEW_ALL_ACCOUNTS",
+      "VIEW_PENDING_SELLER_APPROVALS",
+      "UPDATE_SELLER_APPROVAL_STATUS",
+    ];
+  }
+  if (role === "admin") {
+    return [
+      "VIEW_ALL_ACCOUNTS",
+      "VIEW_PENDING_SELLER_APPROVALS",
+      "UPDATE_SELLER_APPROVAL_STATUS",
+    ];
+  }
+  return [];
+};
+
 /**
  * Normalize email address (same logic as express-validator's normalizeEmail)
  */
@@ -301,6 +324,9 @@ const login = asyncErrorHandler(async (req, res) => {
   if (account.role === "buyer") {
     userData.address = account.address;
     userData.dateOfBirth = account.dateOfBirth;
+  }
+  if (account.role === "admin" || account.role === "superadmin") {
+    userData.permissions = getPermissionsForRole(account.role);
   }
   // Add more role-specific fields as needed for seller/admin
 

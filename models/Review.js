@@ -8,7 +8,6 @@ const reviewSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "Account",
       required: [true, "Please specify the buyer creating the review"],
-      index: true,
     },
     score: {
       type: Number,
