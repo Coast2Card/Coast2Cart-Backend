@@ -45,10 +45,10 @@ const createItem = async (req, res, next) => {
     } = req.body;
 
     // Validate required fields
-    if (!itemType || !itemName || !itemPrice || !quantity || !unit) {
+    if (!itemType || !itemName || !itemPrice || !quantity || !unit || !location) {
       return next(
         new BadRequestError(
-          "Missing required fields: itemType, itemName, itemPrice, quantity, unit"
+          "Missing required fields: itemType, itemName, itemPrice, quantity, unit, location"
         )
       );
     }

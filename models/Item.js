@@ -85,7 +85,9 @@ const itemSchema = new Schema(
     },
     location: {
       type: String,
+      required: [true, "Location is required"],
       trim: true,
+      minLength: [2, "Location must be at least 2 characters"],
       maxLength: [100, "Location cannot exceed 100 characters"],
     },
   },
