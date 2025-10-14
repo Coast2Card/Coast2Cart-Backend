@@ -331,7 +331,7 @@ const login = asyncErrorHandler(async (req, res) => {
 
   // Check seller status for seller accounts
   if (account.role === "seller") {
-    if (account.status === "pending_admin" || account.status === "pending_otp_admin") {
+    if (account.status === "pending_otp" || account.status === "pending_admin" || account.status === "pending_otp_admin") {
       throw new UnauthenticatedError(
         "Your seller account is pending approval. Please wait for administrator review."
       );

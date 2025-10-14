@@ -439,10 +439,10 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
 const getPendingSellerApprovals = asyncErrorHandler(async (req, res) => {
   const { page = 1, limit = 10, search = "" } = req.query;
 
-  // Build search query for pending sellers (OTP verified, waiting for admin approval)
+  // Build search query for pending sellers (all non-validated sellers)
   const searchQuery = {
     role: "seller",
-    status: "pending_admin", // OTP verified, waiting for admin approval
+    status: { $in: ["pending_otp", "pending_admin", "pending_otp_admin"] }, // All sellers waiting for completion
     ...(search && {
       $or: [
         { firstName: { $regex: search, $options: "i" } },
@@ -532,7 +532,7 @@ const updateSellerApprovalStatus = asyncErrorHandler(async (req, res) => {
   const sellerAccount = await Account.findOne({
     _id: sellerId,
     role: "seller",
-    status: { $in: ["pending_admin", "pending_otp_admin"] }, // Can approve from either status
+    status: { $in: ["pending_otp", "pending_admin", "pending_otp_admin"] }, // Can approve from any pending status
   });
 
   if (!sellerAccount) {
