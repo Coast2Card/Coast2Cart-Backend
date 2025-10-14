@@ -463,6 +463,42 @@ const getPendingSellerApprovals = asyncErrorHandler(async (req, res) => {
 });
 
 /**
+ * Get public Seller Information (all authenticated roles)
+ */
+const getSellerInfo = asyncErrorHandler(async (req, res) => {
+  const { sellerId } = req.params;
+
+  const seller = await Account.findOne({
+    _id: sellerId,
+    role: "seller",
+  }).select("firstName lastName address contactNo createdAt email profilePicture");
+
+  if (!seller) {
+    throw new NotFoundError("Seller not found");
+  }
+
+  const fullName = `${seller.firstName || ""} ${seller.lastName || ""}`.trim();
+  const contactNoRaw = seller.contactNo || "";
+  const phoneNumber = contactNoRaw
+    ? (contactNoRaw.startsWith("0") ? contactNoRaw : `0${contactNoRaw}`)
+    : "";
+
+  res.status(200).json({
+    success: true,
+    data: {
+      seller: {
+        name: fullName,
+        location: seller.address,
+        phoneNumber,
+        createdAt: seller.createdAt,
+        email: seller.email,
+        image: seller.profilePicture || null,
+      },
+    },
+  });
+});
+
+/**
  * Update Seller Approval Status (Admin/Superadmin only)
  */
 const updateSellerApprovalStatus = asyncErrorHandler(async (req, res) => {
@@ -655,4 +691,5 @@ module.exports = {
   updateSellerApprovalStatus,
   getUserProfile,
   updateUserProfile,
+  getSellerInfo,
 };
