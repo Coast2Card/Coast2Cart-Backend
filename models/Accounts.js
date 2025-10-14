@@ -44,7 +44,8 @@ const accountSchema = new Schema(
       type: String,
       lowercase: true,
       unique: true,
-      required: [true, "Please provide an email"],
+      sparse: true, // Allows multiple null values (for sellers without email)
+      required: false, // Email is optional (especially for digital illiterate sellers)
       match: [
         /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/,
         "Please provide a valid email",

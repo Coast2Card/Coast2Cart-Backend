@@ -50,7 +50,9 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
 
   // Normalize contact number and check if contact number already exists
   const normalizedContact = philsmsService.normalizePhContact(contactNo);
-  const existingContact = await Account.findOne({ contactNo: normalizedContact });
+  const existingContact = await Account.findOne({
+    contactNo: normalizedContact,
+  });
   if (existingContact) {
     throw new ConflictError("Contact number already exists");
   }
@@ -58,7 +60,7 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
   // Handle optional profile picture upload
   let profilePictureUrl = null;
   let profilePicturePublicId = null;
-  
+
   if (req.file) {
     try {
       const cloudinaryResult = await uploadImage(req.file, {
@@ -68,7 +70,9 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
       profilePicturePublicId = cloudinaryResult.publicId;
     } catch (uploadError) {
       console.error("Profile picture upload failed:", uploadError);
-      throw new BadRequestError("Failed to upload profile picture. Please try again.");
+      throw new BadRequestError(
+        "Failed to upload profile picture. Please try again."
+      );
     }
   }
 
@@ -85,7 +89,9 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     role: "admin",
     isVerified: false,
     ...(profilePictureUrl && { profilePicture: profilePictureUrl }),
-    ...(profilePicturePublicId && { profilePicturePublicId: profilePicturePublicId }),
+    ...(profilePicturePublicId && {
+      profilePicturePublicId: profilePicturePublicId,
+    }),
   };
 
   const account = await Account.create(adminData);
@@ -105,7 +111,8 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: "Admin account created successfully. Please verify via OTP sent to the contact number.",
+    message:
+      "Admin account created successfully. Please verify via OTP sent to the contact number.",
     data: {
       adminId: account._id,
       firstName: account.firstName,
@@ -241,7 +248,10 @@ const updateAdminAccount = asyncErrorHandler(async (req, res) => {
     }
   }
 
-  if (contactNo && philsmsService.normalizePhContact(contactNo) !== adminAccount.contactNo) {
+  if (
+    contactNo &&
+    philsmsService.normalizePhContact(contactNo) !== adminAccount.contactNo
+  ) {
     const normalized = philsmsService.normalizePhContact(contactNo);
     const existingContact = await Account.findOne({
       contactNo: normalized,
@@ -257,7 +267,8 @@ const updateAdminAccount = asyncErrorHandler(async (req, res) => {
   if (lastName) adminAccount.lastName = lastName;
   if (username) adminAccount.username = username.toLowerCase();
   if (dateOfBirth) adminAccount.dateOfBirth = dateOfBirth;
-  if (contactNo) adminAccount.contactNo = philsmsService.normalizePhContact(contactNo);
+  if (contactNo)
+    adminAccount.contactNo = philsmsService.normalizePhContact(contactNo);
   if (address) adminAccount.address = address;
   if (email) adminAccount.email = email.toLowerCase();
 
@@ -315,7 +326,6 @@ const deleteAdminAccount = asyncErrorHandler(async (req, res) => {
   );
 });
 
-
 /**
  * Get All Accounts (Superadmin only) - For comprehensive account management
  */
@@ -362,11 +372,17 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
     const fullName = `${acct.firstName || ""} ${acct.lastName || ""}`.trim();
     const contactNoRaw = acct.contactNo || "";
     const contactNo = contactNoRaw
-      ? (contactNoRaw.startsWith("0") ? contactNoRaw : `0${contactNoRaw}`)
+      ? contactNoRaw.startsWith("0")
+        ? contactNoRaw
+        : `0${contactNoRaw}`
       : "";
-    const status = acct.role === "seller"
-      ? (acct.sellerApprovalStatus || (acct.isVerified ? "verified" : "unverified"))
-      : (acct.isVerified ? "verified" : "unverified");
+    const status =
+      acct.role === "seller"
+        ? acct.sellerApprovalStatus ||
+          (acct.isVerified ? "verified" : "unverified")
+        : acct.isVerified
+        ? "verified"
+        : "unverified";
 
     return {
       fullName,
@@ -383,7 +399,9 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
   const totalAccounts = await Account.countDocuments(searchQuery);
 
   // Get role counts within the same filter scope
-  const matchStages = Object.keys(searchQuery).length ? [{ $match: searchQuery }] : [];
+  const matchStages = Object.keys(searchQuery).length
+    ? [{ $match: searchQuery }]
+    : [];
   const roleCounts = await Account.aggregate([
     ...matchStages,
     {
@@ -551,6 +569,218 @@ const updateSellerApprovalStatus = asyncErrorHandler(async (req, res) => {
   );
 });
 
+/**
+ * Create Seller Account (Admin/Superadmin only)
+ */
+const createSellerAccount = asyncErrorHandler(async (req, res) => {
+  const {
+    firstName,
+    lastName,
+    username,
+    dateOfBirth,
+    contactNo,
+    address,
+    email,
+    password,
+    confirmPassword,
+  } = req.body;
+
+  // Validate password confirmation
+  if (password !== confirmPassword) {
+    throw new BadRequestError("Passwords do not match");
+  }
+
+  // Check if username already exists
+  const existingUsername = await Account.findOne({
+    username: username.toLowerCase(),
+  });
+  if (existingUsername) {
+    throw new ConflictError("Username already exists");
+  }
+
+  // Check if email already exists (only if email is provided)
+  if (email) {
+    const existingEmail = await Account.findOne({
+      email: email.toLowerCase(),
+    });
+    if (existingEmail) {
+      throw new ConflictError("Email already exists");
+    }
+  }
+
+  // Normalize contact number and check if contact number already exists
+  const normalizedContact = philsmsService.normalizePhContact(contactNo);
+  if (!normalizedContact || normalizedContact.length !== 10) {
+    throw new BadRequestError(
+      "Valid contact number is required (10 digits starting with 9)"
+    );
+  }
+
+  const existingContact = await Account.findOne({
+    contactNo: normalizedContact,
+  });
+  if (existingContact) {
+    throw new ConflictError("Contact number already exists");
+  }
+
+  // Handle optional profile picture upload
+  let profilePictureUrl = null;
+  let profilePicturePublicId = null;
+
+  if (req.file) {
+    try {
+      const cloudinaryResult = await uploadImage(req.file, {
+        folder: "coast2cart/profiles",
+      });
+      profilePictureUrl = cloudinaryResult.url;
+      profilePicturePublicId = cloudinaryResult.publicId;
+    } catch (uploadError) {
+      console.error("Profile picture upload failed:", uploadError);
+      throw new BadRequestError(
+        "Failed to upload profile picture. Please try again."
+      );
+    }
+  }
+
+  // Create seller account data
+  const sellerData = {
+    firstName,
+    lastName,
+    username: username.toLowerCase(),
+    dateOfBirth,
+    contactNo: normalizedContact,
+    address,
+    ...(email && { email: email.toLowerCase() }), // Email is optional
+    password,
+    role: "seller",
+    isVerified: false,
+    ...(profilePictureUrl && { profilePicture: profilePictureUrl }),
+    ...(profilePicturePublicId && {
+      profilePicturePublicId: profilePicturePublicId,
+    }),
+  };
+
+  const account = await Account.create(sellerData);
+
+  // Generate OTP for seller verification (valid for 5 minutes)
+  const otpCode = philsmsService.generateOTP();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+  await OTP.create({
+    userId: account._id,
+    otp: otpCode,
+    expiresAt,
+  });
+
+  // Send OTP via PhilSMS
+  const smsResult = await philsmsService.sendOTP(normalizedContact, otpCode);
+
+  res.status(201).json({
+    success: true,
+    message:
+      "Seller account created successfully. An OTP has been sent to the seller's phone number for verification.",
+    data: {
+      sellerId: account._id,
+      firstName: account.firstName,
+      lastName: account.lastName,
+      username: account.username,
+      ...(account.email && { email: account.email }), // Only include if present
+      contactNo: account.contactNo,
+      role: account.role,
+      isVerified: account.isVerified,
+      sellerApprovalStatus: account.sellerApprovalStatus,
+      createdAt: account.createdAt,
+      ...(account.profilePicture && { profilePicture: account.profilePicture }),
+      smsSent: !!smsResult?.success,
+    },
+  });
+
+  console.log(
+    `${req.user.role} ${req.user.username} created seller account: ${account.username}`
+  );
+});
+
+/**
+ * Verify Seller OTP (Admin/Superadmin only)
+ * Admin verifies the OTP on behalf of the seller during account creation
+ */
+const verifySellerOTP = asyncErrorHandler(async (req, res) => {
+  const { sellerId, otp } = req.body;
+
+  // Validate required fields
+  if (!sellerId || !otp) {
+    throw new BadRequestError("Seller ID and OTP are required");
+  }
+
+  // Find the seller account
+  const sellerAccount = await Account.findOne({
+    _id: sellerId,
+    role: "seller",
+  });
+
+  if (!sellerAccount) {
+    throw new NotFoundError("Seller account not found");
+  }
+
+  if (sellerAccount.isVerified) {
+    throw new BadRequestError("Account is already verified");
+  }
+
+  // Find the OTP for this seller
+  const otpRecord = await OTP.findOne({ userId: sellerId }).sort({
+    createdAt: -1,
+  });
+
+  if (!otpRecord) {
+    throw new BadRequestError("No OTP found. Please request a new one");
+  }
+
+  // Verify OTP
+  const isValidOTP = philsmsService.verifyOTP(
+    otpRecord.otp,
+    otp,
+    otpRecord.expiresAt
+  );
+
+  if (!isValidOTP) {
+    throw new BadRequestError("Invalid or expired OTP");
+  }
+
+  // Mark account as verified and auto-approve since admin is creating it
+  sellerAccount.isVerified = true;
+  sellerAccount.sellerApprovalStatus = "approved";
+  sellerAccount.approvedBy = req.user._id;
+  sellerAccount.approvedAt = new Date();
+  await sellerAccount.save();
+
+  // Delete the used OTP
+  await OTP.findByIdAndDelete(otpRecord._id);
+
+  res.status(200).json({
+    success: true,
+    message:
+      "Seller account verified and approved successfully. The seller can now login.",
+    data: {
+      seller: {
+        id: sellerAccount._id,
+        firstName: sellerAccount.firstName,
+        lastName: sellerAccount.lastName,
+        username: sellerAccount.username,
+        email: sellerAccount.email,
+        contactNo: sellerAccount.contactNo,
+        role: sellerAccount.role,
+        isVerified: sellerAccount.isVerified,
+        sellerApprovalStatus: sellerAccount.sellerApprovalStatus,
+        approvedBy: sellerAccount.approvedBy,
+        approvedAt: sellerAccount.approvedAt,
+      },
+    },
+  });
+
+  console.log(
+    `${req.user.role} ${req.user.username} verified seller account: ${sellerAccount.username}`
+  );
+});
 
 /**
  * Get User Profile (for all account types)
@@ -686,6 +916,8 @@ module.exports = {
   getAdminAccount,
   updateAdminAccount,
   deleteAdminAccount,
+  createSellerAccount,
+  verifySellerOTP,
   getAllAccounts,
   getPendingSellerApprovals,
   updateSellerApprovalStatus,
