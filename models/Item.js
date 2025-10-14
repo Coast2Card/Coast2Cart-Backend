@@ -13,9 +13,29 @@ const itemSchema = new Schema(
       type: String,
       required: [true, "Please specify the item type"],
       enum: {
-        values: ["fish", "souvenirs", "food"],
-        message: "Item type must be either 'fish', 'souvenirs', or 'food'",
+        values: ["fish", "souvenirs"],
+        message: "Item type must be either 'fish' or 'souvenirs'",
       },
+    },
+    category: {
+      type: String,
+      enum: {
+        values: [
+          "Fresh Fish",
+          "Shrimp & Prawns",
+          "Crabs",
+          "Squid & Octopus",
+          "Shellfish",
+          "Seaweed",
+          "Others",
+        ],
+        message:
+          "Category must be one of 'Fresh Fish', 'Shrimp & Prawns', 'Crabs', 'Squid & Octopus', 'Shellfish', 'Seaweed', 'Others'",
+      },
+      required: function () {
+        return this.itemType === "fish";
+      },
+      trim: true,
     },
     itemName: {
       type: String,

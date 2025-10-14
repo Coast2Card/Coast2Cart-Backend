@@ -12,6 +12,22 @@ const {
   deleteImage,
 } = require("../services/imageUploadService");
 
+// Helper to shape item responses: limit seller fields and remove sensitive/unused fields
+const sanitizeItem = (item) => {
+  const raw = item && typeof item.toObject === "function" ? item.toObject({ virtuals: true }) : item;
+  if (!raw) return raw;
+  // Strip fields
+  delete raw.itemPrice;
+  delete raw.unit;
+  delete raw.imagePublicId;
+  delete raw.__v;
+  // Minimize seller
+  if (raw.seller && typeof raw.seller === "object") {
+    raw.seller = { _id: raw.seller._id, username: raw.seller.username };
+  }
+  return raw;
+};
+
 /**
  * Create a new item listing
  */
@@ -93,16 +109,13 @@ const createItem = async (req, res, next) => {
       throw saveError;
     }
 
-    // Populate seller information
-    await item.populate(
-      "seller",
-      "firstName lastName username email contactNo address"
-    );
+    // Populate minimal seller information
+    await item.populate("seller", "username");
 
     res.status(StatusCodes.CREATED).json({
       success: true,
       message: "Item created successfully",
-      data: item,
+      data: sanitizeItem(item),
     });
   } catch (error) {
     console.error("Item creation error:", error);
@@ -119,29 +132,93 @@ const getAllItems = async (req, res, next) => {
       itemType,
       seller,
       search,
+      category,
+      priceRange,
       sortBy = "catchDate",
       sortOrder = "desc",
       page = 1,
       limit = 20,
     } = req.query;
 
-    // Build filter object
-    const filter = { isActive: true };
+    // Build filter using $and with optional $or subclauses to support multi-selects
+    const andConditions = [{ isActive: true }];
 
+    // itemType normalization
     if (itemType) {
-      filter.itemType = itemType;
+      const normalizedType = String(itemType).toLowerCase();
+      if (normalizedType === "seafood") {
+        andConditions.push({ itemType: "fish" });
+      } else if (normalizedType === "souvenir") {
+        andConditions.push({ itemType: "souvenirs" });
+      } else {
+        andConditions.push({ itemType: normalizedType });
+      }
     }
 
     if (seller) {
-      filter.seller = seller;
+      andConditions.push({ seller });
     }
 
-    if (search) {
-      filter.$or = [
-        { itemName: { $regex: search, $options: "i" } },
-        { description: { $regex: search, $options: "i" } },
-      ];
+    // Normalize category to array (accept array or comma-separated string)
+    let categoryArray = [];
+    if (Array.isArray(category)) {
+      categoryArray = category.flatMap((c) => String(c).split(",")).map((c) => c.trim()).filter(Boolean);
+    } else if (typeof category === "string") {
+      categoryArray = String(category).split(",").map((c) => c.trim()).filter(Boolean);
     }
+
+    const isAllCategory = categoryArray.length > 0 && categoryArray.some((c) => c.toLowerCase() === "all");
+
+    if (categoryArray.length > 0 && !isAllCategory) {
+      andConditions.push({ category: { $in: categoryArray } });
+    }
+
+    // Handle price range filtering (accept multiple)
+    let priceRanges = [];
+    if (Array.isArray(priceRange)) {
+      priceRanges = priceRange.flatMap((p) => String(p).split(",")).map((p) => p.trim()).filter(Boolean);
+    } else if (typeof priceRange === "string") {
+      priceRanges = String(priceRange).split(",").map((p) => p.trim()).filter(Boolean);
+    }
+
+    const priceOrConditions = [];
+    for (const pr of priceRanges) {
+      switch (pr) {
+        case "100-199":
+          priceOrConditions.push({ itemPrice: { $gte: 100, $lt: 200 } });
+          break;
+        case "200-399":
+          priceOrConditions.push({ itemPrice: { $gte: 200, $lt: 400 } });
+          break;
+        case "400-699":
+          priceOrConditions.push({ itemPrice: { $gte: 400, $lt: 700 } });
+          break;
+        case "700+":
+          priceOrConditions.push({ itemPrice: { $gte: 700 } });
+          break;
+        case "all":
+          // ignore, equivalent to no price filter
+          break;
+        default:
+          return next(new BadRequestError("Invalid price range. Use: 100-199, 200-399, 400-699, 700+, or comma-separated list"));
+      }
+    }
+    if (priceOrConditions.length > 0) {
+      andConditions.push({ $or: priceOrConditions });
+    }
+
+    // Search across name and description
+    if (search) {
+      andConditions.push({
+        $or: [
+          { itemName: { $regex: search, $options: "i" } },
+          { description: { $regex: search, $options: "i" } },
+        ],
+      });
+    }
+
+    // Final filter: collapse to single object when possible
+    const filter = andConditions.length === 1 ? andConditions[0] : { $and: andConditions };
 
     // Build sort object
     const sort = {};
@@ -152,7 +229,7 @@ const getAllItems = async (req, res, next) => {
 
     // Execute query
     const items = await Item.find(filter)
-      .populate("seller", "firstName lastName username email contactNo address")
+      .populate("seller", "username")
       .sort(sort)
       .skip(skip)
       .limit(parseInt(limit));
@@ -160,16 +237,54 @@ const getAllItems = async (req, res, next) => {
     // Get total count for pagination
     const totalItems = await Item.countDocuments(filter);
 
-    res.status(StatusCodes.OK).json({
+    // Prepare response data
+    const responseData = {
       success: true,
-      data: items,
+      data: items.map(sanitizeItem),
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalItems / parseInt(limit)),
         totalItems,
         itemsPerPage: parseInt(limit),
       },
-    });
+    };
+
+    // If a specific category (or categories) is requested and not 'all', include total for that filter
+    if (categoryArray.length > 0 && !isAllCategory) {
+      responseData.categoryTotalItems = totalItems;
+    }
+
+    // Add category counts for seafood items when no specific category is requested
+    if (itemType === "seafood" && (categoryArray.length === 0 || isAllCategory)) {
+      const categoryCounts = await Item.aggregate([
+        {
+          $match: {
+            isActive: true,
+            itemType: "fish",
+            category: { $exists: true, $ne: null }
+          }
+        },
+        {
+          $group: {
+            _id: "$category",
+            count: { $sum: 1 }
+          }
+        },
+        {
+          $sort: { count: -1 }
+        }
+      ]);
+
+      // Format category counts
+      const formattedCounts = categoryCounts.map(item => ({
+        category: item._id,
+        count: item.count
+      }));
+
+      responseData.categoryCounts = formattedCounts;
+    }
+
+    res.status(StatusCodes.OK).json(responseData);
   } catch (error) {
     next(error);
   }
@@ -199,7 +314,7 @@ const getItemsBySeller = async (req, res, next) => {
 
     // Execute query
     const items = await Item.find(filter)
-      .populate("seller", "firstName lastName username email contactNo address")
+      .populate("seller", "username")
       .sort({ catchDate: -1 })
       .skip(skip)
       .limit(parseInt(limit));
@@ -209,7 +324,7 @@ const getItemsBySeller = async (req, res, next) => {
 
     res.status(StatusCodes.OK).json({
       success: true,
-      data: items,
+      data: items.map(sanitizeItem),
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalItems / parseInt(limit)),
@@ -229,10 +344,7 @@ const getItemById = async (req, res, next) => {
   try {
     const { itemId } = req.params;
 
-    const item = await Item.findById(itemId).populate(
-      "seller",
-      "firstName lastName username email contactNo address"
-    );
+    const item = await Item.findById(itemId).populate("seller", "username");
 
     if (!item) {
       return next(new NotFoundError("Item not found"));
@@ -240,7 +352,7 @@ const getItemById = async (req, res, next) => {
 
     res.status(StatusCodes.OK).json({
       success: true,
-      data: item,
+      data: sanitizeItem(item),
     });
   } catch (error) {
     next(error);
@@ -304,15 +416,12 @@ const updateItem = async (req, res, next) => {
     const updatedItem = await Item.findByIdAndUpdate(itemId, updateData, {
       new: true,
       runValidators: true,
-    }).populate(
-      "seller",
-      "firstName lastName username email contactNo address"
-    );
+    }).populate("seller", "username");
 
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Item updated successfully",
-      data: updatedItem,
+      data: sanitizeItem(updatedItem),
     });
   } catch (error) {
     next(error);
@@ -384,15 +493,12 @@ const setItemActiveStatus = async (req, res, next) => {
     item.isActive = isActive;
     await item.save();
 
-    const populated = await item.populate(
-      "seller",
-      "firstName lastName username email contactNo address"
-    );
+    const populated = await item.populate("seller", "username");
 
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Item status updated",
-      data: populated,
+      data: sanitizeItem(populated),
     });
   } catch (error) {
     next(error);

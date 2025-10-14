@@ -90,6 +90,7 @@ app.use("/api/items", require("./routes/items"));
 app.use("/api/cart", require("./routes/cart"));
 app.use("/api/chat", require("./routes/chat"));
 app.use("/api/test", require("./routes/test"));
+app.use("/api/reviews", require("./routes/reviews"));
 
 app.use(errorHandler);
 

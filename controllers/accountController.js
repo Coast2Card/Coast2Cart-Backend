@@ -8,6 +8,8 @@ const {
 } = require("../errors");
 const asyncErrorHandler = require("../middleware/asyncErrorHandler");
 const philsmsService = require("../services/philsmsService");
+const { uploadImage } = require("../services/imageUploadService");
+const OTP = require("../models/OTP");
 
 /**
  * Create Admin Account (Superadmin only)
@@ -53,6 +55,23 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     throw new ConflictError("Contact number already exists");
   }
 
+  // Handle optional profile picture upload
+  let profilePictureUrl = null;
+  let profilePicturePublicId = null;
+  
+  if (req.file) {
+    try {
+      const cloudinaryResult = await uploadImage(req.file, {
+        folder: "coast2cart/profiles",
+      });
+      profilePictureUrl = cloudinaryResult.url;
+      profilePicturePublicId = cloudinaryResult.publicId;
+    } catch (uploadError) {
+      console.error("Profile picture upload failed:", uploadError);
+      throw new BadRequestError("Failed to upload profile picture. Please try again.");
+    }
+  }
+
   // Create admin account data
   const adminData = {
     firstName,
@@ -64,14 +83,29 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     email: email.toLowerCase(),
     password,
     role: "admin",
-    isVerified: true, // Admin accounts are auto-verified
+    isVerified: false,
+    ...(profilePictureUrl && { profilePicture: profilePictureUrl }),
+    ...(profilePicturePublicId && { profilePicturePublicId: profilePicturePublicId }),
   };
 
   const account = await Account.create(adminData);
 
+  // Generate OTP for admin verification (valid for 5 minutes)
+  const otpCode = philsmsService.generateOTP();
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+  await OTP.create({
+    userId: account._id,
+    otp: otpCode,
+    expiresAt,
+  });
+
+  // Send OTP via PhilSMS
+  const smsResult = await philsmsService.sendOTP(normalizedContact, otpCode);
+
   res.status(201).json({
     success: true,
-    message: "Admin account created successfully",
+    message: "Admin account created successfully. Please verify via OTP sent to the contact number.",
     data: {
       adminId: account._id,
       firstName: account.firstName,
@@ -82,6 +116,8 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
       role: account.role,
       isVerified: account.isVerified,
       createdAt: account.createdAt,
+      ...(account.profilePicture && { profilePicture: account.profilePicture }),
+      smsSent: !!smsResult?.success,
     },
   });
 
@@ -321,6 +357,28 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
     .skip(skip)
     .limit(parseInt(limit));
 
+  // Format accounts for response: fullName, email, contactNo (0-prefixed), address, status, createdAt, role
+  const formattedAccounts = accounts.map((acct) => {
+    const fullName = `${acct.firstName || ""} ${acct.lastName || ""}`.trim();
+    const contactNoRaw = acct.contactNo || "";
+    const contactNo = contactNoRaw
+      ? (contactNoRaw.startsWith("0") ? contactNoRaw : `0${contactNoRaw}`)
+      : "";
+    const status = acct.role === "seller"
+      ? (acct.sellerApprovalStatus || (acct.isVerified ? "verified" : "unverified"))
+      : (acct.isVerified ? "verified" : "unverified");
+
+    return {
+      fullName,
+      email: acct.email,
+      contactNo,
+      address: acct.address,
+      status,
+      createdAt: acct.createdAt,
+      role: acct.role,
+    };
+  });
+
   // Get total count for pagination
   const totalAccounts = await Account.countDocuments(searchQuery);
 
@@ -339,7 +397,7 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     data: {
-      accounts,
+      accounts: formattedAccounts,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalAccounts / parseInt(limit)),
