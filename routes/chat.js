@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { body, param, query } = require("express-validator");
-const { authenticateToken } = require("../middleware/auth");
+const { authenticateToken, authorizeRoles } = require("../middleware/auth");
 const asyncHandler = require("../middleware/asyncErrorHandler");
 const {
   createOrGetChatRoom,
@@ -11,6 +11,8 @@ const {
   markMessagesAsRead,
   deleteMessage,
   getChatRoomDetails,
+  markItemAsSold,
+  updateRequestedQuantity,
 } = require("../controllers/chatController");
 
 // Authentication middleware will be applied to individual routes
@@ -23,6 +25,10 @@ const validateCreateChatRoom = [
     .isMongoId()
     .withMessage("Invalid participant ID"),
   body("itemId").optional().isMongoId().withMessage("Invalid item ID"),
+  body("quantity")
+    .optional()
+    .isFloat({ min: 0.01 })
+    .withMessage("Quantity must be a positive number"),
 ];
 
 const validateSendMessage = [
@@ -62,6 +68,12 @@ const validatePagination = [
     .optional()
     .isInt({ min: 1, max: 100 })
     .withMessage("Limit must be between 1 and 100"),
+];
+
+const validateUpdateQuantity = [
+  body("quantity")
+    .isFloat({ min: 0.01 })
+    .withMessage("Quantity must be a positive number"),
 ];
 
 // Routes
@@ -156,6 +168,32 @@ router.delete(
   authenticateToken,
   ...validateMessageId,
   asyncHandler(deleteMessage)
+);
+
+/**
+ * @route   POST /api/chat/rooms/:chatRoomId/mark-sold
+ * @desc    Mark item as sold in chat room (uses stored requested quantity)
+ * @access  Private (Seller only)
+ */
+router.post(
+  "/rooms/:chatRoomId/mark-sold",
+  authenticateToken,
+  authorizeRoles("seller"),
+  ...validateChatRoomId,
+  asyncHandler(markItemAsSold)
+);
+
+/**
+ * @route   PUT /api/chat/rooms/:chatRoomId/quantity
+ * @desc    Update requested quantity in chat room
+ * @access  Private (Buyer only)
+ */
+router.put(
+  "/rooms/:chatRoomId/quantity",
+  authenticateToken,
+  ...validateChatRoomId,
+  ...validateUpdateQuantity,
+  asyncHandler(updateRequestedQuantity)
 );
 
 module.exports = router;

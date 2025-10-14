@@ -1,5 +1,5 @@
 const Item = require("../models/Item");
-const Receipt = require("../models/Receipt");
+const SoldItem = require("../models/SoldItem");
 const Account = require("../models/Accounts");
 const {
   BadRequestError,
@@ -586,8 +586,8 @@ const sellItem = async (req, res, next) => {
     // Calculate total amount
     const totalAmount = item.itemPrice * parseFloat(quantitySold);
 
-  // Create receipt record
-  const receipt = new Receipt({
+  // Create sold item record
+  const soldItem = new SoldItem({
       item: item._id,
       seller: item.seller,
       buyer: buyerId,
@@ -599,10 +599,9 @@ const sellItem = async (req, res, next) => {
       totalAmount,
       image: item.image,
       imagePublicId: item.imagePublicId,
-      notes,
     });
 
-    await receipt.save();
+    await soldItem.save();
 
     // Update item quantity
     item.quantity -= parseFloat(quantitySold);
@@ -614,8 +613,8 @@ const sellItem = async (req, res, next) => {
 
     await item.save();
 
-    // Populate the receipt with buyer and seller info
-    await receipt.populate([
+    // Populate the sold item with buyer and seller info
+    await soldItem.populate([
       {
         path: "seller",
         select: "firstName lastName username email contactNo address",
@@ -629,7 +628,7 @@ const sellItem = async (req, res, next) => {
     res.status(StatusCodes.CREATED).json({
       success: true,
       message: "Item sold successfully",
-      data: receipt,
+      data: soldItem,
     });
   } catch (error) {
     next(error);
@@ -655,14 +654,14 @@ const getSoldItemsBySeller = async (req, res, next) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
   // Execute query
-  const soldItems = await Receipt.find(filter)
+  const soldItems = await SoldItem.find(filter)
       .populate("buyer", "firstName lastName username email contactNo address")
       .sort({ saleDate: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
     // Get total count
-  const totalItems = await Receipt.countDocuments(filter);
+  const totalItems = await SoldItem.countDocuments(filter);
 
     res.status(StatusCodes.OK).json({
       success: true,
@@ -698,14 +697,14 @@ const getSoldItemsByBuyer = async (req, res, next) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
   // Execute query
-  const soldItems = await Receipt.find(filter)
+  const soldItems = await SoldItem.find(filter)
       .populate("seller", "firstName lastName username email contactNo address")
       .sort({ saleDate: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
     // Get total count
-  const totalItems = await Receipt.countDocuments(filter);
+  const totalItems = await SoldItem.countDocuments(filter);
 
     res.status(StatusCodes.OK).json({
       success: true,

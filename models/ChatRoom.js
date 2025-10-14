@@ -31,6 +31,14 @@ const chatRoomSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    requestedQuantity: {
+      type: Number,
+      default: 1, // Default to 1 if not specified
+    },
+    requestedUnit: {
+      type: String,
+      default: null, // Will be populated from the item's unit
+    },
   },
   {
     timestamps: true,
