@@ -15,7 +15,7 @@ This document summarizes the implementation of the admin-initiated seller accoun
   - Checks for duplicate username, email, and contact number
   - Normalizes phone numbers to standard format
   - Supports optional profile picture upload
-  - Creates seller account with `isVerified: false` and `sellerApprovalStatus: "pending"`
+  - Creates seller account with `isVerified: false` and `status: "pending_otp_admin"`
   - Generates and stores OTP (valid for 5 minutes)
   - Sends OTP via PhilSMS to seller's phone number
   - Returns seller account details and SMS status
@@ -153,7 +153,7 @@ curl -X POST http://localhost:5000/api/accounts/seller \
     "contactNo": "9154903863",
     "role": "seller",
     "isVerified": false,
-    "sellerApprovalStatus": "pending",
+    "status": "pending_otp_admin",
     "createdAt": "2025-10-14T10:30:00.000Z",
     "smsSent": true
   }
@@ -162,11 +162,11 @@ curl -X POST http://localhost:5000/api/accounts/seller \
 
 ## Account States
 
-| State        | isVerified | sellerApprovalStatus | Can Login? |
+| State        | isVerified | status | Can Login? |
 | ------------ | ---------- | -------------------- | ---------- |
-| Just Created | `false`    | `pending`            | ❌ No      |
-| OTP Verified | `true`     | `pending`            | ❌ No      |
-| Approved     | `true`     | `approved`           | ✅ Yes     |
+| Just Created | `false`    | `pending_otp_admin`            | ❌ No      |
+| OTP Verified | `true`     | `pending_admin`            | ❌ No      |
+| Approved     | `true`     | `validated`           | ✅ Yes     |
 | Rejected     | `true`     | `rejected`           | ❌ No      |
 
 ## Security Features

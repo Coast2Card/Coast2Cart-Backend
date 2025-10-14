@@ -17,8 +17,7 @@ describe("Mark Item as Sold Functionality", () => {
       password: "password123",
       role: "seller",
       isVerified: true,
-      sellerStatus: "validated", // Fully validated seller
-      sellerApprovalStatus: "approved",
+      status: "validated", // Fully validated seller
     });
     await seller.save();
 
@@ -163,8 +162,7 @@ describe("Mark Item as Sold Functionality", () => {
         password: "password123",
         role: "seller",
         isVerified: true,
-        sellerStatus: "pending_admin", // Not fully validated
-        sellerApprovalStatus: "pending",
+        status: "pending_admin", // Not fully validated
       });
       await pendingSeller.save();
 

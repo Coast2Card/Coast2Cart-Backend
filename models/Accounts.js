@@ -65,11 +65,7 @@ const accountSchema = new Schema(
       enum: ["buyer", "seller", "admin", "superadmin"],
       default: "buyer",
     },
-    sellerApprovalStatus: {
-      type: String,
-      enum: ["pending", "approved", "rejected"],
-    },
-    sellerStatus: {
+    status: {
       type: String,
       enum: [
         "pending_otp",           // Account created, waiting for OTP verification
@@ -108,15 +104,13 @@ accountSchema.pre("save", async function (next) {
     }
   }
 
-  // Set seller approval status based on role
+  // Set seller status based on role
   if (this.isModified("role")) {
     if (this.role === "seller") {
-      this.sellerApprovalStatus = "pending";
-      // sellerStatus will be set explicitly in the creation logic
+      // status will be set explicitly in the creation logic
     } else {
-      // Clear seller approval fields for non-sellers
-      this.sellerApprovalStatus = undefined;
-      this.sellerStatus = undefined;
+      // Clear seller status fields for non-sellers
+      this.status = undefined;
       this.approvedBy = undefined;
       this.approvedAt = undefined;
     }
@@ -154,13 +148,13 @@ accountSchema.methods.updateSellerStatus = function(isOTPVerified, isAdminApprov
   if (this.role !== "seller") return;
   
   if (isOTPVerified && isAdminApproved) {
-    this.sellerStatus = "validated";
+    this.status = "validated";
   } else if (isOTPVerified && !isAdminApproved) {
-    this.sellerStatus = "pending_admin"; // OTP verified, waiting for admin approval
+    this.status = "pending_admin"; // OTP verified, waiting for admin approval
   } else if (!isOTPVerified && isAdminApproved) {
-    this.sellerStatus = "pending_otp"; // Admin approved, waiting for OTP verification
+    this.status = "pending_otp"; // Admin approved, waiting for OTP verification
   } else {
-    this.sellerStatus = "pending_otp_admin"; // Waiting for both OTP and admin approval
+    this.status = "pending_otp_admin"; // Waiting for both OTP and admin approval
   }
 };
 

@@ -380,7 +380,7 @@ const getAllAccounts = asyncErrorHandler(async (req, res) => {
       : "";
     const status =
       acct.role === "seller"
-        ? acct.sellerStatus || "pending_otp"
+        ? acct.status || "pending_otp"
         : acct.isVerified
         ? "verified"
         : "unverified";
@@ -442,7 +442,7 @@ const getPendingSellerApprovals = asyncErrorHandler(async (req, res) => {
   // Build search query for pending sellers (OTP verified, waiting for admin approval)
   const searchQuery = {
     role: "seller",
-    sellerStatus: "pending_admin", // OTP verified, waiting for admin approval
+    status: "pending_admin", // OTP verified, waiting for admin approval
     ...(search && {
       $or: [
         { firstName: { $regex: search, $options: "i" } },
@@ -532,23 +532,21 @@ const updateSellerApprovalStatus = asyncErrorHandler(async (req, res) => {
   const sellerAccount = await Account.findOne({
     _id: sellerId,
     role: "seller",
-    sellerStatus: { $in: ["pending_admin", "pending_otp_admin"] }, // Can approve from either status
+    status: { $in: ["pending_admin", "pending_otp_admin"] }, // Can approve from either status
   });
 
   if (!sellerAccount) {
     throw new NotFoundError("Pending seller account not found");
   }
 
-  // Update seller approval status
-  sellerAccount.sellerApprovalStatus = status;
+  // Update seller status based on approval
   sellerAccount.approvedBy = req.user._id;
   sellerAccount.approvedAt = new Date();
   
-  // Update seller status based on OTP verification and admin approval
   if (status === "approved") {
     sellerAccount.updateSellerStatus(sellerAccount.isVerified, true);
   } else if (status === "rejected") {
-    sellerAccount.sellerStatus = "rejected";
+    sellerAccount.status = "rejected";
   }
   
   await sellerAccount.save();
@@ -566,8 +564,7 @@ const updateSellerApprovalStatus = asyncErrorHandler(async (req, res) => {
         lastName: sellerAccount.lastName,
         username: sellerAccount.username,
         email: sellerAccount.email,
-        sellerApprovalStatus: sellerAccount.sellerApprovalStatus,
-        sellerStatus: sellerAccount.sellerStatus,
+        status: sellerAccount.status,
         approvedBy: sellerAccount.approvedBy,
         approvedAt: sellerAccount.approvedAt,
       },
@@ -664,7 +661,7 @@ const createSellerAccount = asyncErrorHandler(async (req, res) => {
     password,
     role: "seller",
     isVerified: false,
-    sellerStatus: "pending_otp", // Admin-created sellers: admin approved, waiting for OTP verification
+    status: "pending_otp", // Admin-created sellers: admin approved, waiting for OTP verification
     ...(profilePictureUrl && { profilePicture: profilePictureUrl }),
     ...(profilePicturePublicId && {
       profilePicturePublicId: profilePicturePublicId,
@@ -699,8 +696,7 @@ const createSellerAccount = asyncErrorHandler(async (req, res) => {
       contactNo: account.contactNo,
       role: account.role,
       isVerified: account.isVerified,
-      sellerApprovalStatus: account.sellerApprovalStatus,
-      sellerStatus: account.sellerStatus,
+      status: account.status,
       createdAt: account.createdAt,
       ...(account.profilePicture && { profilePicture: account.profilePicture }),
       smsSent: !!smsResult?.success,
@@ -760,7 +756,6 @@ const verifySellerOTP = asyncErrorHandler(async (req, res) => {
 
   // Mark account as verified and auto-approve since admin is creating it
   sellerAccount.isVerified = true;
-  sellerAccount.sellerApprovalStatus = "approved";
   sellerAccount.approvedBy = req.user._id;
   sellerAccount.approvedAt = new Date();
   
@@ -786,8 +781,7 @@ const verifySellerOTP = asyncErrorHandler(async (req, res) => {
         contactNo: sellerAccount.contactNo,
         role: sellerAccount.role,
         isVerified: sellerAccount.isVerified,
-        sellerApprovalStatus: sellerAccount.sellerApprovalStatus,
-        sellerStatus: sellerAccount.sellerStatus,
+        status: sellerAccount.status,
         approvedBy: sellerAccount.approvedBy,
         approvedAt: sellerAccount.approvedAt,
       },

@@ -11,7 +11,7 @@ POST /api/chat/rooms/:chatRoomId/mark-sold
 ## Authentication
 - Requires valid JWT token
 - Requires seller role (`role: "seller"`)
-- Seller account must be fully validated (`sellerStatus: "validated"`)
+- Seller account must be fully validated (`status: "validated"`)
 - Only the seller of the item can mark it as sold
 
 ## Request Parameters
@@ -181,7 +181,7 @@ curl -X POST \
 
 1. **Authentication**: Ensures the user is authenticated with valid JWT token
 2. **Role Authorization**: Verifies the user has seller role (`role: "seller"`)
-3. **Seller Status Validation**: Confirms seller account is fully validated (`sellerStatus: "validated"`)
+3. **Seller Status Validation**: Confirms seller account is fully validated (`status: "validated"`)
 4. **Item Verification**: Confirms the chat room has an associated item
 5. **Ownership Check**: Verifies only the item's seller can mark it as sold
 6. **Quantity Check**: Ensures item has available quantity (not already sold out)

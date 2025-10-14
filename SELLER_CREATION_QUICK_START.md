@@ -6,14 +6,14 @@
 
 - Seller creates account via `/api/auth/signup` with `role: "seller"`
 - Seller verifies OTP themselves via `/api/auth/verify-otp`
-- Status: `isVerified: true`, `sellerApprovalStatus: "pending"`
+- Status: `isVerified: true`, `status: "pending_admin"`
 - **Admin must approve** before seller can login
 
 ### Flow 2: Admin-Assisted (Digital Illiterate Seller) ⭐ THIS GUIDE
 
 - **Admin creates account** via `/api/accounts/seller`
 - **Admin inputs OTP** (from seller) via `/api/accounts/seller/verify-otp`
-- Status: `isVerified: true`, `sellerApprovalStatus: "approved"` (auto-approved!)
+- Status: `isVerified: true`, `status: "validated"` (auto-approved!)
 - **Seller can login immediately** - no approval needed
 
 ---
@@ -67,7 +67,7 @@ Authorization: Bearer YOUR_ADMIN_TOKEN
     "contactNo": "9154903863",
     "role": "seller",
     "isVerified": false,
-    "sellerApprovalStatus": "pending",
+    "status": "pending_admin",
     "createdAt": "2025-10-14T...",
     "smsSent": true
   }
@@ -78,7 +78,7 @@ Authorization: Bearer YOUR_ADMIN_TOKEN
 
 1. ✅ Seller account is created (email is optional - can be omitted)
 2. 📱 OTP is sent to `9154903863` (phone number is the unique identifier)
-3. 📝 Account status: `isVerified: false`, `sellerApprovalStatus: "pending"`
+3. 📝 Account status: `isVerified: false`, `status: "pending_admin"`
 4. ⏳ Waiting for admin to input OTP from seller
 
 ---
@@ -125,7 +125,7 @@ Authorization: Bearer <your_admin_token>
       "contactNo": "9154903863",
       "role": "seller",
       "isVerified": true,
-      "sellerApprovalStatus": "approved",
+      "status": "validated",
       "approvedBy": "67yyyyy",
       "approvedAt": "2025-10-14T..."
     }
@@ -137,7 +137,7 @@ Authorization: Bearer <your_admin_token>
 
 1. ✅ Phone number verified
 2. ✅ Account **automatically approved** (since admin created it)
-3. 📝 Account status: `isVerified: true`, `sellerApprovalStatus: "approved"`
+3. 📝 Account status: `isVerified: true`, `status: "validated"`
 4. 🎉 Seller can login immediately!
 
 **Note:** No approval step needed! Admin-created accounts are auto-approved.

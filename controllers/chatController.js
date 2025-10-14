@@ -340,7 +340,7 @@ const markItemAsSold = async (req, res) => {
   }
 
   // Verify seller status is validated (both OTP verified and admin approved)
-  if (sellerAccount.sellerStatus !== "validated") {
+  if (sellerAccount.status !== "validated") {
     throw new UnauthorizedError("Seller account must be fully validated to mark items as sold");
   }
 

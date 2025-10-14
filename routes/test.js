@@ -18,7 +18,7 @@ router.post("/create-account", async (req, res, next) => {
       password,
       role = "buyer",
       isVerified = true,
-      sellerApprovalStatus,
+      status,
     } = req.body;
 
     if (!firstName || !lastName || !username || !dateOfBirth || !contactNo || !address || !email || !password) {
@@ -47,7 +47,7 @@ router.post("/create-account", async (req, res, next) => {
       password,
       role,
       isVerified,
-      sellerApprovalStatus: role === "seller" ? (sellerApprovalStatus || "pending") : undefined,
+      status: role === "seller" ? (status || "pending_otp") : undefined,
     });
 
     res.status(201).json({
@@ -60,7 +60,7 @@ router.post("/create-account", async (req, res, next) => {
         contactNo: account.contactNo,
         role: account.role,
         isVerified: account.isVerified,
-        sellerApprovalStatus: account.sellerApprovalStatus,
+        status: account.status,
       },
     });
   } catch (err) {
