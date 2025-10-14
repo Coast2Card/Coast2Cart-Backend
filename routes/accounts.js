@@ -5,6 +5,8 @@ const {
   authorizeRoles,
 } = require("../middleware/auth");
 const { validateProfileUpdate } = require("../middleware/validation");
+const { uploadSingle } = require("../middleware/upload");
+const { validateMulterImage } = require("../middleware/validateMulterImage");
 const {
   createAdminAccount,
   getAllAdminAccounts,
@@ -16,6 +18,8 @@ const {
   updateSellerApprovalStatus,
   getUserProfile,
   updateUserProfile,
+  uploadProfilePhoto,
+  deleteProfilePhoto,
 } = require("../controllers/accountController");
 
 // All routes require authentication
@@ -95,5 +99,25 @@ router.get("/profile", getUserProfile);
  * @body    { firstName?, lastName?, username?, dateOfBirth?, contactNo?, address?, email? }
  */
 router.put("/profile", validateProfileUpdate, updateUserProfile);
+
+/**
+ * @route   PUT /api/accounts/profile/photo
+ * @desc    Upload or update profile photo (All authenticated users)
+ * @access  Private (All roles - buyer, seller, admin, superadmin)
+ * @body    Form-data with 'image' field
+ */
+router.put(
+  "/profile/photo",
+  uploadSingle,
+  validateMulterImage,
+  uploadProfilePhoto
+);
+
+/**
+ * @route   DELETE /api/accounts/profile/photo
+ * @desc    Delete profile photo (All authenticated users)
+ * @access  Private (All roles - buyer, seller, admin, superadmin)
+ */
+router.delete("/profile/photo", deleteProfilePhoto);
 
 module.exports = router;

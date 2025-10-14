@@ -6,8 +6,13 @@ const {
   NotFoundError,
   ConflictError,
 } = require("../errors");
+const { StatusCodes } = require("http-status-codes");
 const asyncErrorHandler = require("../middleware/asyncErrorHandler");
 const philsmsService = require("../services/philsmsService");
+const {
+  uploadImage,
+  deleteImage,
+} = require("../services/imageUploadService");
 
 /**
  * Create Admin Account (Superadmin only)
@@ -570,6 +575,94 @@ const updateUserProfile = asyncErrorHandler(async (req, res) => {
   console.log(`User ${userAccount.username} updated their profile`);
 });
 
+/**
+ * Upload or update profile photo
+ */
+const uploadProfilePhoto = asyncErrorHandler(async (req, res) => {
+  const user = req.user;
+
+  // Get the user's account from database
+  const userAccount = await Account.findById(user._id);
+
+  if (!userAccount) {
+    throw new NotFoundError("User account not found");
+  }
+
+  // Check if file was uploaded
+  if (!req.file) {
+    throw new BadRequestError("Please provide a profile photo");
+  }
+
+  // Delete old profile photo from Cloudinary if exists
+  if (userAccount.profilePhotoPublicId) {
+    try {
+      await deleteImage(userAccount.profilePhotoPublicId);
+    } catch (error) {
+      console.error("Error deleting old profile photo:", error);
+      // Continue with upload even if deletion fails
+    }
+  }
+
+  // Upload new profile photo to Cloudinary
+  const uploadResult = await uploadImage(req.file, {
+    folder: "coast2cart/profile-photos",
+  });
+
+  // Update user account with new profile photo
+  userAccount.profilePhoto = uploadResult.url;
+  userAccount.profilePhotoPublicId = uploadResult.publicId;
+  await userAccount.save();
+
+  res.status(StatusCodes.OK).json({
+    success: true,
+    message: "Profile photo uploaded successfully",
+    data: {
+      profilePhoto: userAccount.profilePhoto,
+    },
+  });
+
+  console.log(`User ${userAccount.username} uploaded profile photo`);
+});
+
+/**
+ * Delete profile photo
+ */
+const deleteProfilePhoto = asyncErrorHandler(async (req, res) => {
+  const user = req.user;
+
+  // Get the user's account from database
+  const userAccount = await Account.findById(user._id);
+
+  if (!userAccount) {
+    throw new NotFoundError("User account not found");
+  }
+
+  // Check if user has a profile photo
+  if (!userAccount.profilePhotoPublicId) {
+    throw new BadRequestError("No profile photo to delete");
+  }
+
+  // Delete profile photo from Cloudinary
+  try {
+    await deleteImage(userAccount.profilePhotoPublicId);
+  } catch (error) {
+    console.error("Error deleting profile photo from Cloudinary:", error);
+    throw new BadRequestError("Failed to delete profile photo");
+  }
+
+  // Remove profile photo from user account
+  userAccount.profilePhoto = null;
+  userAccount.profilePhotoPublicId = null;
+  await userAccount.save();
+
+  res.status(StatusCodes.OK).json({
+    success: true,
+    message: "Profile photo deleted successfully",
+  });
+
+  console.log(`User ${userAccount.username} deleted profile photo`);
+});
+
 module.exports = {
   createAdminAccount,
   getAllAdminAccounts,
@@ -581,4 +674,6 @@ module.exports = {
   updateSellerApprovalStatus,
   getUserProfile,
   updateUserProfile,
+  uploadProfilePhoto,
+  deleteProfilePhoto,
 };
