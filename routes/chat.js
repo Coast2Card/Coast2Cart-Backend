@@ -11,6 +11,9 @@ const {
   markMessagesAsRead,
   deleteMessage,
   getChatRoomDetails,
+  getChatTransactions,
+  addTransactionToChatRoom,
+  markTransactionAsSold,
 } = require("../controllers/chatController");
 
 // Authentication middleware will be applied to individual routes
@@ -23,6 +26,27 @@ const validateCreateChatRoom = [
     .isMongoId()
     .withMessage("Invalid participant ID"),
   body("itemId").optional().isMongoId().withMessage("Invalid item ID"),
+  body("quantity")
+    .optional()
+    .isFloat({ min: 0.01 })
+    .withMessage("Quantity must be greater than 0"),
+];
+
+const validateAddTransaction = [
+  body("itemId")
+    .notEmpty()
+    .withMessage("Item ID is required")
+    .isMongoId()
+    .withMessage("Invalid item ID"),
+  body("quantity")
+    .notEmpty()
+    .withMessage("Quantity is required")
+    .isFloat({ min: 0.01 })
+    .withMessage("Quantity must be greater than 0"),
+];
+
+const validateTransactionId = [
+  param("transactionId").isMongoId().withMessage("Invalid transaction ID"),
 ];
 
 const validateSendMessage = [
@@ -156,6 +180,44 @@ router.delete(
   authenticateToken,
   ...validateMessageId,
   asyncHandler(deleteMessage)
+);
+
+/**
+ * @route   GET /api/chat/rooms/:chatRoomId/transactions
+ * @desc    Get all transactions for a chat room
+ * @access  Private
+ */
+router.get(
+  "/rooms/:chatRoomId/transactions",
+  authenticateToken,
+  ...validateChatRoomId,
+  asyncHandler(getChatTransactions)
+);
+
+/**
+ * @route   POST /api/chat/rooms/:chatRoomId/transactions
+ * @desc    Add new transaction to existing chat room
+ * @access  Private
+ */
+router.post(
+  "/rooms/:chatRoomId/transactions",
+  authenticateToken,
+  ...validateChatRoomId,
+  ...validateAddTransaction,
+  asyncHandler(addTransactionToChatRoom)
+);
+
+/**
+ * @route   PUT /api/chat/rooms/:chatRoomId/transactions/:transactionId/mark-sold
+ * @desc    Mark transaction as sold and update inventory
+ * @access  Private (Seller only)
+ */
+router.put(
+  "/rooms/:chatRoomId/transactions/:transactionId/mark-sold",
+  authenticateToken,
+  ...validateChatRoomId,
+  ...validateTransactionId,
+  asyncHandler(markTransactionAsSold)
 );
 
 module.exports = router;
