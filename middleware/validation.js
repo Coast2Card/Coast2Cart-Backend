@@ -82,6 +82,7 @@ const validateSignup = [
     .withMessage("Address must be between 10 and 200 characters"),
 
   body("email")
+    .optional()
     .isEmail()
     .withMessage("Please provide a valid email")
     .normalizeEmail(),
@@ -138,11 +139,17 @@ const checkUsernameUnique = async (req, res, next) => {
 };
 
 /**
- * Check if email is unique
+ * Check if email is unique (only if email is provided)
  */
 const checkEmailUnique = async (req, res, next) => {
   try {
     const { email } = req.body;
+    
+    // Only check uniqueness if email is provided
+    if (!email || email.trim() === '') {
+      return next();
+    }
+    
     const existingUser = await Account.findOne({ email: email.toLowerCase() });
 
     if (existingUser) {
@@ -339,10 +346,11 @@ const validateItemCreation = [
     .withMessage("Description cannot exceed 500 characters"),
 
   body("location")
-    .optional()
     .trim()
-    .isLength({ max: 100 })
-    .withMessage("Location cannot exceed 100 characters"),
+    .notEmpty()
+    .withMessage("Location is required")
+    .isLength({ min: 2, max: 100 })
+    .withMessage("Location must be between 2 and 100 characters"),
 
   handleValidationErrors,
 ];

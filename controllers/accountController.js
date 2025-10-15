@@ -40,12 +40,14 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     throw new ConflictError("Username already exists");
   }
 
-  // Check if email already exists
-  const existingEmail = await Account.findOne({
-    email: email.toLowerCase(),
-  });
-  if (existingEmail) {
-    throw new ConflictError("Email already exists");
+  // Check if email already exists (only if email is provided)
+  if (email) {
+    const existingEmail = await Account.findOne({
+      email: email.toLowerCase(),
+    });
+    if (existingEmail) {
+      throw new ConflictError("Email already exists");
+    }
   }
 
   // Normalize contact number and check if contact number already exists
@@ -84,7 +86,7 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
     dateOfBirth,
     contactNo: normalizedContact,
     address,
-    email: email.toLowerCase(),
+    ...(email && { email: email.toLowerCase() }), // Email is optional
     password,
     role: "admin",
     isVerified: false,
@@ -118,7 +120,7 @@ const createAdminAccount = asyncErrorHandler(async (req, res) => {
       firstName: account.firstName,
       lastName: account.lastName,
       username: account.username,
-      email: account.email,
+      ...(account.email && { email: account.email }), // Only include if present
       contactNo: account.contactNo,
       role: account.role,
       isVerified: account.isVerified,

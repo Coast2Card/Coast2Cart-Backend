@@ -39,15 +39,16 @@ const createItem = async (req, res, next) => {
       itemPrice,
       quantity,
       unit,
+      category,
       description,
       location,
     } = req.body;
 
     // Validate required fields
-    if (!itemType || !itemName || !itemPrice || !quantity || !unit) {
+    if (!itemType || !itemName || !itemPrice || !quantity || !unit || !location) {
       return next(
         new BadRequestError(
-          "Missing required fields: itemType, itemName, itemPrice, quantity, unit"
+          "Missing required fields: itemType, itemName, itemPrice, quantity, unit, location"
         )
       );
     }
@@ -89,6 +90,8 @@ const createItem = async (req, res, next) => {
       itemPrice: parsedPrice,
       quantity: parsedQuantity,
       unit,
+      // Only saved when provided; schema enforces requirement when itemType is 'fish'
+      category,
       image: cloudinaryResult.url, // Cloudinary URL from service
       imagePublicId: cloudinaryResult.publicId, // Store public ID for future operations
       description,
