@@ -120,6 +120,7 @@ const getCart = async (req, res, next) => {
 
     // Calculate totals and format data
     let cartTotal = 0;
+    let totalItemCount = 0;
     const sellerIds = new Set();
 
     const cartData = cart.items
@@ -127,6 +128,7 @@ const getCart = async (req, res, next) => {
         if (cartItem.item) {
           const totalPrice = cartItem.item.itemPrice * cartItem.quantity;
           cartTotal += totalPrice;
+          totalItemCount += cartItem.quantity;
           sellerIds.add(cartItem.item.seller._id.toString());
 
           return {
@@ -152,7 +154,7 @@ const getCart = async (req, res, next) => {
       success: true,
       data: cartData,
       cartTotal,
-      itemCount: cart.items.length,
+      itemCount: totalItemCount,
       sellerCount: sellerIds.size,
     });
   } catch (error) {
@@ -313,11 +315,13 @@ const getCartSummary = async (req, res, next) => {
     }
 
     let cartTotal = 0;
+    let totalItemCount = 0;
     const sellerIds = new Set();
 
     cart.items.forEach((cartItem) => {
       if (cartItem.item) {
         cartTotal += cartItem.item.itemPrice * cartItem.quantity;
+        totalItemCount += cartItem.quantity;
         sellerIds.add(cartItem.item.seller.toString());
       }
     });
@@ -325,7 +329,7 @@ const getCartSummary = async (req, res, next) => {
     res.status(StatusCodes.OK).json({
       success: true,
       data: {
-        itemCount: cart.items.length,
+        itemCount: totalItemCount,
         sellerCount: sellerIds.size,
         cartTotal,
         formattedTotal: `₱${cartTotal.toFixed(2)}`,
