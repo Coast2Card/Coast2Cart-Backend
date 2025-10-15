@@ -1,8 +1,7 @@
 const mongoose = require("mongoose");
 const Item = require("../models/Item");
-const SoldItem = require("../models/SoldItem");
+const Transaction = require("../models/Transaction");
 const Account = require("../models/Accounts");
-const Review = require("../models/Review");
 const {
   BadRequestError,
   NotFoundError,
@@ -593,7 +592,7 @@ const deleteItemHard = async (req, res, next) => {
 };
 
 /**
- * Sell an item (mark as sold and create sold item record)
+ * Sell an item (mark as sold and create transaction record)
  */
 const sellItem = async (req, res, next) => {
   try {
@@ -631,22 +630,22 @@ const sellItem = async (req, res, next) => {
     // Calculate total amount
     const totalAmount = item.itemPrice * parseFloat(quantitySold);
 
-  // Create sold item record
-  const soldItem = new SoldItem({
-      item: item._id,
-      seller: item.seller,
-      buyer: buyerId,
-      itemType: item.itemType,
-      itemName: item.itemName,
-      itemPrice: item.itemPrice,
-      quantitySold: parseFloat(quantitySold),
+    // Create transaction record (sold)
+    const transaction = new Transaction({
+      chatRoomId: undefined, // optional when selling directly
+      itemId: item._id,
+      buyerId: buyerId,
+      sellerId: item.seller,
+      quantity: parseFloat(quantitySold),
       unit: item.unit,
-      totalAmount,
-      image: item.image,
-      imagePublicId: item.imagePublicId,
+      priceAtTransaction: item.itemPrice,
+      totalPrice: totalAmount,
+      status: "sold",
+      markedSoldAt: new Date(),
+      markedSoldBy: req.user.id,
     });
 
-    await soldItem.save();
+    await transaction.save();
 
     // Update item quantity
     item.quantity -= parseFloat(quantitySold);
@@ -672,22 +671,26 @@ const sellItem = async (req, res, next) => {
       // Don't fail the sale if cart cleanup fails
     }
 
-    // Populate the sold item with buyer and seller info
-    await soldItem.populate([
+    // Populate the transaction with buyer and seller info
+    await transaction.populate([
       {
-        path: "seller",
+        path: "sellerId",
         select: "firstName lastName username email contactNo address",
       },
       {
-        path: "buyer",
+        path: "buyerId",
         select: "firstName lastName username email contactNo address",
+      },
+      {
+        path: "itemId",
+        select: "itemName image unit",
       },
     ]);
 
     res.status(StatusCodes.CREATED).json({
       success: true,
       message: "Item sold successfully",
-      data: soldItem,
+      data: transaction,
     });
   } catch (error) {
     next(error);
@@ -695,7 +698,7 @@ const sellItem = async (req, res, next) => {
 };
 
 /**
- * Get sold items by seller
+ * Get sold transactions by seller
  */
 const getSoldItemsBySeller = async (req, res, next) => {
   try {
@@ -703,28 +706,29 @@ const getSoldItemsBySeller = async (req, res, next) => {
     const { itemType, page = 1, limit = 20 } = req.query;
 
     // Build filter object
-    const filter = { seller: sellerId };
+    const filter = { sellerId: sellerId, status: "sold" };
 
     if (itemType) {
-      filter.itemType = itemType;
+      // Filter by item type via item lookup
     }
 
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-  // Execute query
-  const soldItems = await SoldItem.find(filter)
-      .populate("buyer", "firstName lastName username email contactNo address")
-      .sort({ saleDate: -1 })
+    // Execute query
+    const transactions = await Transaction.find(filter)
+      .populate("buyerId", "firstName lastName username email contactNo address")
+      .populate("itemId", "itemName itemPrice image unit itemType")
+      .sort({ markedSoldAt: -1, createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
 
     // Get total count
-  const totalItems = await SoldItem.countDocuments(filter);
+    const totalItems = await Transaction.countDocuments(filter);
 
     res.status(StatusCodes.OK).json({
       success: true,
-      data: soldItems,
+      data: transactions,
       pagination: {
         currentPage: parseInt(page),
         totalPages: Math.ceil(totalItems / parseInt(limit)),
@@ -738,7 +742,7 @@ const getSoldItemsBySeller = async (req, res, next) => {
 };
 
 /**
- * Get sold items by buyer with search and sorting functionality
+ * Get sold transactions by buyer with search and sorting functionality
  */
 const getSoldItemsByBuyer = async (req, res, next) => {
   try {
@@ -748,16 +752,14 @@ const getSoldItemsByBuyer = async (req, res, next) => {
       search, 
       page = 1, 
       limit = 20,
-      sortBy = "saleDate",
+      sortBy = "markedSoldAt",
       sortOrder = "desc"
     } = req.query;
 
     // Build filter object
-    const filter = { buyer: buyerId };
+    const filter = { buyerId: buyerId, status: "sold" };
 
-    if (itemType) {
-      filter.itemType = itemType;
-    }
+    // itemType filter will be applied via lookup and match if provided
 
     // Add search functionality for item name and seller name
     if (search) {
@@ -766,8 +768,18 @@ const getSoldItemsByBuyer = async (req, res, next) => {
         { $match: filter },
         {
           $lookup: {
+            from: "items",
+            localField: "itemId",
+            foreignField: "_id",
+            as: "itemInfo"
+          }
+        },
+        { $unwind: "$itemInfo" },
+        ...(itemType ? [{ $match: { "itemInfo.itemType": itemType } }] : []),
+        {
+          $lookup: {
             from: "accounts",
-            localField: "seller",
+            localField: "sellerId",
             foreignField: "_id",
             as: "sellerInfo"
           }
@@ -778,7 +790,7 @@ const getSoldItemsByBuyer = async (req, res, next) => {
         {
           $match: {
             $or: [
-              { itemName: { $regex: search, $options: "i" } },
+              { "itemInfo.itemName": { $regex: search, $options: "i" } },
               { "sellerInfo.username": { $regex: search, $options: "i" } },
               { "sellerInfo.firstName": { $regex: search, $options: "i" } },
               { "sellerInfo.lastName": { $regex: search, $options: "i" } }
@@ -786,36 +798,25 @@ const getSoldItemsByBuyer = async (req, res, next) => {
           }
         },
         {
-          $lookup: {
-            from: "accounts",
-            localField: "seller",
-            foreignField: "_id",
-            as: "seller"
-          }
-        },
-        {
-          $unwind: "$seller"
-        },
-        {
           $project: {
             seller: {
-              firstName: 1,
-              lastName: 1,
-              username: 1,
-              email: 1,
-              contactNo: 1,
-              address: 1
+              firstName: "$sellerInfo.firstName",
+              lastName: "$sellerInfo.lastName",
+              username: "$sellerInfo.username",
+              email: "$sellerInfo.email",
+              contactNo: "$sellerInfo.contactNo",
+              address: "$sellerInfo.address"
             },
-            item: 1,
-            itemType: 1,
-            itemName: 1,
-            itemPrice: 1,
-            quantitySold: 1,
+            item: "$itemId",
+            itemType: "$itemInfo.itemType",
+            itemName: "$itemInfo.itemName",
+            itemPrice: "$priceAtTransaction",
+            quantitySold: "$quantity",
             unit: 1,
-            totalAmount: 1,
-            image: 1,
-            imagePublicId: 1,
-            saleDate: 1,
+            totalAmount: "$totalPrice",
+            image: "$itemInfo.image",
+            imagePublicId: "$itemInfo.imagePublicId",
+            saleDate: "$markedSoldAt",
             createdAt: 1,
             updatedAt: 1
           }
@@ -861,8 +862,8 @@ const getSoldItemsByBuyer = async (req, res, next) => {
       ];
 
       const [soldItems, countResult] = await Promise.all([
-        SoldItem.aggregate(pipeline),
-        SoldItem.aggregate(countPipeline)
+        Transaction.aggregate(pipeline),
+        Transaction.aggregate(countPipeline)
       ]);
 
       const totalItems = countResult.length > 0 ? countResult[0].total : 0;
@@ -887,14 +888,15 @@ const getSoldItemsByBuyer = async (req, res, next) => {
       sort[sortBy] = sortOrder === "desc" ? -1 : 1;
 
       // Execute query
-      const soldItems = await SoldItem.find(filter)
-        .populate("seller", "firstName lastName username email contactNo address")
+      const soldItems = await Transaction.find(filter)
+        .populate("sellerId", "firstName lastName username email contactNo address")
+        .populate("itemId", "itemName itemPrice image unit itemType")
         .sort(sort)
         .skip(skip)
         .limit(parseInt(limit));
 
       // Get total count
-      const totalItems = await SoldItem.countDocuments(filter);
+      const totalItems = await Transaction.countDocuments(filter);
 
       res.status(StatusCodes.OK).json({
         success: true,
@@ -913,7 +915,7 @@ const getSoldItemsByBuyer = async (req, res, next) => {
 };
 
 /**
- * Get favorite sellers for a buyer based on purchase history
+ * Get favorite sellers for a buyer based on purchase history (using Transactions)
  */
 const getFavoriteSellers = async (req, res, next) => {
   try {
@@ -956,21 +958,22 @@ const getFavoriteSellers = async (req, res, next) => {
       return next(new BadRequestError("Invalid sort order"));
     }
 
-    // Build aggregation pipeline
+    // Build aggregation pipeline (only sold transactions)
     const pipeline = [
-      // Match sold items for this buyer
+      // Match sold transactions for this buyer
       {
         $match: {
-          buyer: new mongoose.Types.ObjectId(buyerId)
+          buyerId: new mongoose.Types.ObjectId(buyerId),
+          status: "sold"
         }
       },
       // Group by seller to count purchases
       {
         $group: {
-          _id: "$seller",
+          _id: "$sellerId",
           purchaseCount: { $sum: 1 },
-          totalSpent: { $sum: "$totalAmount" },
-          lastPurchaseDate: { $max: "$saleDate" }
+          totalSpent: { $sum: "$totalPrice" },
+          lastPurchaseDate: { $max: "$markedSoldAt" }
         }
       },
       // Lookup seller details
@@ -1049,12 +1052,12 @@ const getFavoriteSellers = async (req, res, next) => {
     // Execute aggregation to get total count
     const countPipeline = [...pipeline, { $count: "total" }];
     const [favoriteSellers, countResult] = await Promise.all([
-      SoldItem.aggregate([
+      Transaction.aggregate([
         ...pipeline,
         { $skip: (pageNum - 1) * limitNum },
         { $limit: limitNum }
       ]),
-      SoldItem.aggregate(countPipeline)
+      Transaction.aggregate(countPipeline)
     ]);
 
     const totalSellers = countResult.length > 0 ? countResult[0].total : 0;

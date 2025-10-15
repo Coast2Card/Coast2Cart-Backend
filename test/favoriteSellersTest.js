@@ -2,7 +2,7 @@ const request = require("supertest");
 const mongoose = require("mongoose");
 const app = require("../server");
 const Account = require("../models/Accounts");
-const SoldItem = require("../models/SoldItem");
+const Transaction = require("../models/Transaction");
 const Review = require("../models/Review");
 const Item = require("../models/Item");
 
@@ -119,8 +119,8 @@ describe("Favorite Sellers API", () => {
   });
 
   beforeEach(async () => {
-    // Clean up sold items and reviews before each test
-    await SoldItem.deleteMany({});
+    // Clean up transactions and reviews before each test
+    await Transaction.deleteMany({});
     await Review.deleteMany({});
   });
 
@@ -128,7 +128,7 @@ describe("Favorite Sellers API", () => {
     // Clean up test data
     await Account.deleteMany({});
     await Item.deleteMany({});
-    await SoldItem.deleteMany({});
+    await Transaction.deleteMany({});
     await Review.deleteMany({});
     await mongoose.connection.close();
   });
@@ -145,85 +145,73 @@ describe("Favorite Sellers API", () => {
     });
 
     it("should return favorite sellers with purchase counts and ratings", async () => {
-      // Create sold items - buyer purchases from seller1 (3 times), seller2 (2 times), seller3 (1 time)
-      await SoldItem.create([
+      // Create transactions - buyer purchases from seller1 (3), seller2 (2), seller3 (1)
+      await Transaction.create([
         {
-          item: item1Id,
-          seller: seller1Id,
-          buyer: buyerId,
-          itemType: "fish",
-          itemName: "Fresh Tuna",
-          itemPrice: 100,
-          quantitySold: 2,
+          itemId: item1Id,
+          sellerId: seller1Id,
+          buyerId: buyerId,
+          priceAtTransaction: 100,
+          quantity: 2,
           unit: "kg",
-          totalAmount: 200,
-          image: "test-image-url",
-          imagePublicId: "test-public-id"
+          totalPrice: 200,
+          status: "sold",
+          markedSoldAt: new Date()
         },
         {
-          item: item1Id,
-          seller: seller1Id,
-          buyer: buyerId,
-          itemType: "fish",
-          itemName: "Fresh Tuna",
-          itemPrice: 100,
-          quantitySold: 1,
+          itemId: item1Id,
+          sellerId: seller1Id,
+          buyerId: buyerId,
+          priceAtTransaction: 100,
+          quantity: 1,
           unit: "kg",
-          totalAmount: 100,
-          image: "test-image-url",
-          imagePublicId: "test-public-id"
+          totalPrice: 100,
+          status: "sold",
+          markedSoldAt: new Date()
         },
         {
-          item: item1Id,
-          seller: seller1Id,
-          buyer: buyerId,
-          itemType: "fish",
-          itemName: "Fresh Tuna",
-          itemPrice: 100,
-          quantitySold: 1.5,
+          itemId: item1Id,
+          sellerId: seller1Id,
+          buyerId: buyerId,
+          priceAtTransaction: 100,
+          quantity: 1.5,
           unit: "kg",
-          totalAmount: 150,
-          image: "test-image-url",
-          imagePublicId: "test-public-id"
+          totalPrice: 150,
+          status: "sold",
+          markedSoldAt: new Date()
         },
         {
-          item: item2Id,
-          seller: seller2Id,
-          buyer: buyerId,
-          itemType: "fish",
-          itemName: "Salmon",
-          itemPrice: 150,
-          quantitySold: 1,
+          itemId: item2Id,
+          sellerId: seller2Id,
+          buyerId: buyerId,
+          priceAtTransaction: 150,
+          quantity: 1,
           unit: "kg",
-          totalAmount: 150,
-          image: "test-image-url",
-          imagePublicId: "test-public-id"
+          totalPrice: 150,
+          status: "sold",
+          markedSoldAt: new Date()
         },
         {
-          item: item2Id,
-          seller: seller2Id,
-          buyer: buyerId,
-          itemType: "fish",
-          itemName: "Salmon",
-          itemPrice: 150,
-          quantitySold: 2,
+          itemId: item2Id,
+          sellerId: seller2Id,
+          buyerId: buyerId,
+          priceAtTransaction: 150,
+          quantity: 2,
           unit: "kg",
-          totalAmount: 300,
-          image: "test-image-url",
-          imagePublicId: "test-public-id"
+          totalPrice: 300,
+          status: "sold",
+          markedSoldAt: new Date()
         },
         {
-          item: item3Id,
-          seller: seller3Id,
-          buyer: buyerId,
-          itemType: "souvenirs",
-          itemName: "Shell Necklace",
-          itemPrice: 50,
-          quantitySold: 1,
+          itemId: item3Id,
+          sellerId: seller3Id,
+          buyerId: buyerId,
+          priceAtTransaction: 50,
+          quantity: 1,
           unit: "pieces",
-          totalAmount: 50,
-          image: "test-image-url",
-          imagePublicId: "test-public-id"
+          totalPrice: 50,
+          status: "sold",
+          markedSoldAt: new Date()
         }
       ]);
 
@@ -259,33 +247,29 @@ describe("Favorite Sellers API", () => {
     });
 
     it("should support search functionality", async () => {
-      // Create sold items
-      await SoldItem.create([
+      // Create transactions
+      await Transaction.create([
         {
-          item: item1Id,
-          seller: seller1Id,
-          buyer: buyerId,
-          itemType: "fish",
-          itemName: "Fresh Tuna",
-          itemPrice: 100,
-          quantitySold: 1,
+          itemId: item1Id,
+          sellerId: seller1Id,
+          buyerId: buyerId,
+          priceAtTransaction: 100,
+          quantity: 1,
           unit: "kg",
-          totalAmount: 100,
-          image: "test-image-url",
-          imagePublicId: "test-public-id"
+          totalPrice: 100,
+          status: "sold",
+          markedSoldAt: new Date()
         },
         {
-          item: item2Id,
-          seller: seller2Id,
-          buyer: buyerId,
-          itemType: "fish",
-          itemName: "Salmon",
-          itemPrice: 150,
-          quantitySold: 1,
+          itemId: item2Id,
+          sellerId: seller2Id,
+          buyerId: buyerId,
+          priceAtTransaction: 150,
+          quantity: 1,
           unit: "kg",
-          totalAmount: 150,
-          image: "test-image-url",
-          imagePublicId: "test-public-id"
+          totalPrice: 150,
+          status: "sold",
+          markedSoldAt: new Date()
         }
       ]);
 
@@ -383,18 +367,16 @@ describe("Favorite Sellers API", () => {
           imagePublicId: "test-public-id"
         });
 
-        await SoldItem.create({
-          item: item._id,
-          seller: seller._id,
-          buyer: buyerId,
-          itemType: "fish",
-          itemName: `Fish ${i}`,
-          itemPrice: 100,
-          quantitySold: 1,
+        await Transaction.create({
+          itemId: item._id,
+          sellerId: seller._id,
+          buyerId: buyerId,
+          priceAtTransaction: 100,
+          quantity: 1,
           unit: "kg",
-          totalAmount: 100,
-          image: "test-image-url",
-          imagePublicId: "test-public-id"
+          totalPrice: 100,
+          status: "sold",
+          markedSoldAt: new Date()
         });
       }
 
