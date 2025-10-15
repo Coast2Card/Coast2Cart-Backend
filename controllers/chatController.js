@@ -10,6 +10,11 @@ const {
   NotFoundError,
   UnauthorizedError,
 } = require("../errors");
+const {
+  removeItemFromUserCart,
+  updateCartQuantitiesForReducedStock,
+  cleanupCartsForInactiveItem,
+} = require("../services/cartCleanupService");
 
 // Create or get chat room between two users
 const createOrGetChatRoom = async (req, res) => {
@@ -425,6 +430,20 @@ const markItemAsSold = async (req, res) => {
 
     // Commit transaction
     await session.commitTransaction();
+
+    // Clean up carts after sale (outside transaction to avoid conflicts)
+    try {
+      // Remove the sold item from the buyer's cart
+      await removeItemFromUserCart(item._id.toString(), buyerId.toString(), 'sold');
+      
+      // Only remove from all carts if item is completely sold out
+      if (updatedItem.quantity <= 0) {
+        await cleanupCartsForInactiveItem(item._id.toString());
+      }
+    } catch (cartCleanupError) {
+      console.error('Cart cleanup error during item sale:', cartCleanupError);
+      // Don't fail the sale if cart cleanup fails
+    }
 
     res.status(StatusCodes.OK).json({
       success: true,

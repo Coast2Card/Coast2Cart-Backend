@@ -12,6 +12,7 @@ const {
   sellItem,
   getSoldItemsBySeller,
   getSoldItemsByBuyer,
+  getFavoriteSellers,
 } = require("../controllers/itemController");
 
 const {
@@ -75,5 +76,8 @@ router.get("/sold/seller/:sellerId", getSoldItemsBySeller);
 
 // GET /api/items/sold/buyer/:buyerId - Get sold items by buyer
 router.get("/sold/buyer/:buyerId", getSoldItemsByBuyer);
+
+// GET /api/items/favorite-sellers/:buyerId - Get favorite sellers for a buyer
+router.get("/favorite-sellers/:buyerId", getFavoriteSellers);
 
 module.exports = router;

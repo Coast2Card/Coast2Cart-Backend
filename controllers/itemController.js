@@ -1,6 +1,8 @@
+const mongoose = require("mongoose");
 const Item = require("../models/Item");
 const SoldItem = require("../models/SoldItem");
 const Account = require("../models/Accounts");
+const Review = require("../models/Review");
 const {
   BadRequestError,
   NotFoundError,
@@ -11,6 +13,11 @@ const {
   uploadImage,
   deleteImage,
 } = require("../services/imageUploadService");
+const {
+  removeItemFromUserCart,
+  updateCartQuantitiesForReducedStock,
+  cleanupCartsForInactiveItem,
+} = require("../services/cartCleanupService");
 
 // Helper to shape item responses: limit seller fields and remove sensitive/unused fields
 const sanitizeItem = (item) => {
@@ -421,6 +428,18 @@ const updateItem = async (req, res, next) => {
       runValidators: true,
     }).populate("seller", "username");
 
+    // Clean up carts if quantity becomes 0
+    if (updateData.quantity !== undefined && updatedItem.quantity <= 0) {
+      try {
+        // If quantity becomes 0, mark as inactive and remove from all carts
+        await Item.findByIdAndUpdate(itemId, { isActive: false });
+        await cleanupCartsForInactiveItem(itemId);
+      } catch (cartCleanupError) {
+        console.error('Cart cleanup error during item update:', cartCleanupError);
+        // Don't fail the update if cart cleanup fails
+      }
+    }
+
     res.status(StatusCodes.OK).json({
       success: true,
       message: "Item updated successfully",
@@ -447,6 +466,14 @@ const deleteItem = async (req, res, next) => {
     // Check if user is the owner
     if (item.seller.toString() !== req.user.id) {
       return next(new UnauthorizedError("You can only delete your own items"));
+    }
+
+    // Clean up carts before deleting item
+    try {
+      await cleanupCartsForInactiveItem(itemId);
+    } catch (cartCleanupError) {
+      console.error('Cart cleanup error during item deletion:', cartCleanupError);
+      // Continue with deletion even if cart cleanup fails
     }
 
     // Delete image from Cloudinary if it exists
@@ -496,6 +523,16 @@ const setItemActiveStatus = async (req, res, next) => {
     item.isActive = isActive;
     await item.save();
 
+    // Clean up carts if item becomes inactive
+    if (!isActive) {
+      try {
+        await cleanupCartsForInactiveItem(itemId);
+      } catch (cartCleanupError) {
+        console.error('Cart cleanup error during item status change:', cartCleanupError);
+        // Don't fail the status update if cart cleanup fails
+      }
+    }
+
     const populated = await item.populate("seller", "username");
 
     res.status(StatusCodes.OK).json({
@@ -524,6 +561,14 @@ const deleteItemHard = async (req, res, next) => {
     // Check if user is the owner
     if (item.seller.toString() !== req.user.id) {
       return next(new UnauthorizedError("You can only delete your own items"));
+    }
+
+    // Clean up carts before deleting item
+    try {
+      await cleanupCartsForInactiveItem(itemId);
+    } catch (cartCleanupError) {
+      console.error('Cart cleanup error during item hard deletion:', cartCleanupError);
+      // Continue with deletion even if cart cleanup fails
     }
 
     // Delete image from Cloudinary if it exists
@@ -613,6 +658,20 @@ const sellItem = async (req, res, next) => {
 
     await item.save();
 
+    // Clean up carts after sale
+    try {
+      // Remove the sold item from the buyer's cart
+      await removeItemFromUserCart(itemId, buyerId, 'sold');
+      
+      // Only remove from all carts if item is completely sold out
+      if (item.quantity <= 0) {
+        await cleanupCartsForInactiveItem(itemId);
+      }
+    } catch (cartCleanupError) {
+      console.error('Cart cleanup error during item sale:', cartCleanupError);
+      // Don't fail the sale if cart cleanup fails
+    }
+
     // Populate the sold item with buyer and seller info
     await soldItem.populate([
       {
@@ -679,12 +738,19 @@ const getSoldItemsBySeller = async (req, res, next) => {
 };
 
 /**
- * Get sold items by buyer
+ * Get sold items by buyer with search and sorting functionality
  */
 const getSoldItemsByBuyer = async (req, res, next) => {
   try {
     const { buyerId } = req.params;
-    const { itemType, page = 1, limit = 20 } = req.query;
+    const { 
+      itemType, 
+      search, 
+      page = 1, 
+      limit = 20,
+      sortBy = "saleDate",
+      sortOrder = "desc"
+    } = req.query;
 
     // Build filter object
     const filter = { buyer: buyerId };
@@ -693,29 +759,320 @@ const getSoldItemsByBuyer = async (req, res, next) => {
       filter.itemType = itemType;
     }
 
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    // Add search functionality for item name and seller name
+    if (search) {
+      // Use aggregation to search across item name and seller name
+      const pipeline = [
+        { $match: filter },
+        {
+          $lookup: {
+            from: "accounts",
+            localField: "seller",
+            foreignField: "_id",
+            as: "sellerInfo"
+          }
+        },
+        {
+          $unwind: "$sellerInfo"
+        },
+        {
+          $match: {
+            $or: [
+              { itemName: { $regex: search, $options: "i" } },
+              { "sellerInfo.username": { $regex: search, $options: "i" } },
+              { "sellerInfo.firstName": { $regex: search, $options: "i" } },
+              { "sellerInfo.lastName": { $regex: search, $options: "i" } }
+            ]
+          }
+        },
+        {
+          $lookup: {
+            from: "accounts",
+            localField: "seller",
+            foreignField: "_id",
+            as: "seller"
+          }
+        },
+        {
+          $unwind: "$seller"
+        },
+        {
+          $project: {
+            seller: {
+              firstName: 1,
+              lastName: 1,
+              username: 1,
+              email: 1,
+              contactNo: 1,
+              address: 1
+            },
+            item: 1,
+            itemType: 1,
+            itemName: 1,
+            itemPrice: 1,
+            quantitySold: 1,
+            unit: 1,
+            totalAmount: 1,
+            image: 1,
+            imagePublicId: 1,
+            saleDate: 1,
+            createdAt: 1,
+            updatedAt: 1
+          }
+        },
+        {
+          $sort: { [sortBy]: sortOrder === "desc" ? -1 : 1 }
+        },
+        {
+          $skip: (parseInt(page) - 1) * parseInt(limit)
+        },
+        {
+          $limit: parseInt(limit)
+        }
+      ];
 
-  // Execute query
-  const soldItems = await SoldItem.find(filter)
-      .populate("seller", "firstName lastName username email contactNo address")
-      .sort({ saleDate: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+      // Get total count for search results
+      const countPipeline = [
+        { $match: filter },
+        {
+          $lookup: {
+            from: "accounts",
+            localField: "seller",
+            foreignField: "_id",
+            as: "sellerInfo"
+          }
+        },
+        {
+          $unwind: "$sellerInfo"
+        },
+        {
+          $match: {
+            $or: [
+              { itemName: { $regex: search, $options: "i" } },
+              { "sellerInfo.username": { $regex: search, $options: "i" } },
+              { "sellerInfo.firstName": { $regex: search, $options: "i" } },
+              { "sellerInfo.lastName": { $regex: search, $options: "i" } }
+            ]
+          }
+        },
+        {
+          $count: "total"
+        }
+      ];
 
-    // Get total count
-  const totalItems = await SoldItem.countDocuments(filter);
+      const [soldItems, countResult] = await Promise.all([
+        SoldItem.aggregate(pipeline),
+        SoldItem.aggregate(countPipeline)
+      ]);
+
+      const totalItems = countResult.length > 0 ? countResult[0].total : 0;
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: soldItems,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalItems / parseInt(limit)),
+          totalItems,
+          itemsPerPage: parseInt(limit),
+        },
+      });
+    } else {
+      // No search - use regular query for better performance
+      // Calculate pagination
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      // Build sort object
+      const sort = {};
+      sort[sortBy] = sortOrder === "desc" ? -1 : 1;
+
+      // Execute query
+      const soldItems = await SoldItem.find(filter)
+        .populate("seller", "firstName lastName username email contactNo address")
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit));
+
+      // Get total count
+      const totalItems = await SoldItem.countDocuments(filter);
+
+      res.status(StatusCodes.OK).json({
+        success: true,
+        data: soldItems,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(totalItems / parseInt(limit)),
+          totalItems,
+          itemsPerPage: parseInt(limit),
+        },
+      });
+    }
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * Get favorite sellers for a buyer based on purchase history
+ */
+const getFavoriteSellers = async (req, res, next) => {
+  try {
+    const { buyerId } = req.params;
+    const { 
+      page = 1, 
+      limit = 10, 
+      search = "", 
+      sortBy = "purchaseCount", 
+      sortOrder = "desc" 
+    } = req.query;
+
+    // Validate buyerId
+    if (!buyerId) {
+      return next(new BadRequestError("Buyer ID is required"));
+    }
+
+    // Validate buyer exists
+    const buyer = await Account.findById(buyerId);
+    if (!buyer) {
+      return next(new NotFoundError("Buyer not found"));
+    }
+
+    // Validate pagination parameters
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    
+    if (pageNum < 1 || limitNum < 1 || limitNum > 100) {
+      return next(new BadRequestError("Invalid pagination parameters"));
+    }
+
+    // Validate sort parameters
+    const allowedSortFields = ["purchaseCount", "averageRating", "sellerName"];
+    if (!allowedSortFields.includes(sortBy)) {
+      return next(new BadRequestError("Invalid sort field"));
+    }
+
+    const allowedSortOrders = ["asc", "desc"];
+    if (!allowedSortOrders.includes(sortOrder)) {
+      return next(new BadRequestError("Invalid sort order"));
+    }
+
+    // Build aggregation pipeline
+    const pipeline = [
+      // Match sold items for this buyer
+      {
+        $match: {
+          buyer: new mongoose.Types.ObjectId(buyerId)
+        }
+      },
+      // Group by seller to count purchases
+      {
+        $group: {
+          _id: "$seller",
+          purchaseCount: { $sum: 1 },
+          totalSpent: { $sum: "$totalAmount" },
+          lastPurchaseDate: { $max: "$saleDate" }
+        }
+      },
+      // Lookup seller details
+      {
+        $lookup: {
+          from: "accounts",
+          localField: "_id",
+          foreignField: "_id",
+          as: "seller"
+        }
+      },
+      // Unwind seller array
+      {
+        $unwind: "$seller"
+      },
+      // Filter out sellers that don't match search criteria
+      ...(search ? [{
+        $match: {
+          $or: [
+            { "seller.firstName": { $regex: search, $options: "i" } },
+            { "seller.lastName": { $regex: search, $options: "i" } },
+            { "seller.username": { $regex: search, $options: "i" } }
+          ]
+        }
+      }] : []),
+      // Lookup reviews for average rating calculation
+      {
+        $lookup: {
+          from: "reviews",
+          localField: "_id",
+          foreignField: "seller",
+          as: "reviews"
+        }
+      },
+      // Calculate average rating
+      {
+        $addFields: {
+          averageRating: {
+            $cond: {
+              if: { $gt: [{ $size: "$reviews" }, 0] },
+              then: { $avg: "$reviews.stars" },
+              else: 0
+            }
+          },
+          totalReviews: { $size: "$reviews" },
+          sellerName: {
+            $concat: ["$seller.firstName", " ", "$seller.lastName"]
+          }
+        }
+      },
+      // Project final fields
+      {
+        $project: {
+          _id: 1,
+          sellerId: "$_id",
+          sellerName: 1,
+          username: "$seller.username",
+          profilePicture: "$seller.profilePicture",
+          purchaseCount: 1,
+          totalSpent: 1,
+          averageRating: { $round: ["$averageRating", 2] },
+          totalReviews: 1,
+          lastPurchaseDate: 1
+        }
+      }
+    ];
+
+    // Add sorting
+    const sortField = sortBy === "sellerName" ? "sellerName" : sortBy;
+    pipeline.push({
+      $sort: {
+        [sortField]: sortOrder === "desc" ? -1 : 1
+      }
+    });
+
+    // Execute aggregation to get total count
+    const countPipeline = [...pipeline, { $count: "total" }];
+    const [favoriteSellers, countResult] = await Promise.all([
+      SoldItem.aggregate([
+        ...pipeline,
+        { $skip: (pageNum - 1) * limitNum },
+        { $limit: limitNum }
+      ]),
+      SoldItem.aggregate(countPipeline)
+    ]);
+
+    const totalSellers = countResult.length > 0 ? countResult[0].total : 0;
 
     res.status(StatusCodes.OK).json({
       success: true,
-      data: soldItems,
+      data: favoriteSellers,
       pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(totalItems / parseInt(limit)),
-        totalItems,
-        itemsPerPage: parseInt(limit),
+        currentPage: pageNum,
+        totalPages: Math.ceil(totalSellers / limitNum),
+        totalSellers,
+        sellersPerPage: limitNum,
       },
+      search: search || null,
+      sortBy,
+      sortOrder
     });
+
   } catch (error) {
     next(error);
   }
@@ -732,4 +1089,5 @@ module.exports = {
   sellItem,
   getSoldItemsBySeller,
   getSoldItemsByBuyer,
+  getFavoriteSellers,
 };
