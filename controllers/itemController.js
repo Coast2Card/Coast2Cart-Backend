@@ -390,7 +390,7 @@ const updateItem = async (req, res, next) => {
     }
 
     // Check if user is the owner
-    if (item.seller.toString() !== req.user.id) {
+    if (item.seller.toString() !== req.user.id.toString().toString()) {
       return next(new UnauthorizedError("You can only update your own items"));
     }
 
@@ -464,7 +464,7 @@ const deleteItem = async (req, res, next) => {
     }
 
     // Check if user is the owner
-    if (item.seller.toString() !== req.user.id) {
+    if (item.seller.toString() !== req.user.id.toString()) {
       return next(new UnauthorizedError("You can only delete your own items"));
     }
 
@@ -516,7 +516,7 @@ const setItemActiveStatus = async (req, res, next) => {
       return next(new NotFoundError("Item not found"));
     }
 
-    if (item.seller.toString() !== req.user.id) {
+    if (item.seller.toString() !== req.user.id.toString()) {
       return next(new UnauthorizedError("You can only update your own items"));
     }
 
@@ -559,7 +559,7 @@ const deleteItemHard = async (req, res, next) => {
     }
 
     // Check if user is the owner
-    if (item.seller.toString() !== req.user.id) {
+    if (item.seller.toString() !== req.user.id.toString()) {
       return next(new UnauthorizedError("You can only delete your own items"));
     }
 
@@ -608,7 +608,7 @@ const sellItem = async (req, res, next) => {
     }
 
     // Check if user is the owner
-    if (item.seller.toString() !== req.user.id) {
+    if (item.seller.toString() !== req.user.id.toString()) {
       return next(new UnauthorizedError("You can only sell your own items"));
     }
 
