@@ -65,9 +65,16 @@ const accountSchema = new Schema(
       enum: ["buyer", "seller", "admin", "superadmin"],
       default: "buyer",
     },
-    sellerApprovalStatus: {
+    status: {
       type: String,
-      enum: ["pending", "approved", "rejected"],
+      enum: [
+        "pending_otp",           // Account created, waiting for OTP verification
+        "pending_admin",         // OTP verified, waiting for admin approval
+        "pending_otp_admin",     // Admin approved, waiting for OTP verification
+        "validated",             // Both OTP and admin approval completed
+        "rejected"               // Rejected by admin
+      ],
+      default: "pending_otp",
     },
     approvedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -97,13 +104,13 @@ accountSchema.pre("save", async function (next) {
     }
   }
 
-  // Set seller approval status based on role
+  // Set seller status based on role
   if (this.isModified("role")) {
     if (this.role === "seller") {
-      this.sellerApprovalStatus = "pending";
+      // status will be set explicitly in the creation logic
     } else {
-      // Clear seller approval fields for non-sellers
-      this.sellerApprovalStatus = undefined;
+      // Clear seller status fields for non-sellers
+      this.status = undefined;
       this.approvedBy = undefined;
       this.approvedAt = undefined;
     }
@@ -130,6 +137,25 @@ accountSchema.methods.isAdult = function () {
   }
 
   return age >= 18;
+};
+
+/**
+ * Update seller status based on OTP verification and admin approval
+ * @param {boolean} isOTPVerified - Whether OTP is verified
+ * @param {boolean} isAdminApproved - Whether admin has approved
+ */
+accountSchema.methods.updateSellerStatus = function(isOTPVerified, isAdminApproved) {
+  if (this.role !== "seller") return;
+  
+  if (isOTPVerified && isAdminApproved) {
+    this.status = "validated";
+  } else if (isOTPVerified && !isAdminApproved) {
+    this.status = "pending_admin"; // OTP verified, waiting for admin approval
+  } else if (!isOTPVerified && isAdminApproved) {
+    this.status = "pending_otp"; // Admin approved, waiting for OTP verification
+  } else {
+    this.status = "pending_otp_admin"; // Waiting for both OTP and admin approval
+  }
 };
 
 module.exports = mongoose.model("Account", accountSchema);

@@ -139,6 +139,17 @@ const signup = asyncErrorHandler(async (req, res) => {
     isVerified: false,
   };
 
+  // Set seller status based on creation method
+  if (role === "seller") {
+    if (isAdminCreator) {
+      // Admin-created seller: pending_otp (admin approved, waiting for OTP verification)
+      accountData.status = "pending_otp";
+    } else {
+      // Signup-created seller: pending_otp_admin (waiting for both OTP and admin approval)
+      accountData.status = "pending_otp_admin";
+    }
+  }
+
   const account = await Account.create(accountData);
 
   // Generate OTP
@@ -177,7 +188,7 @@ const signup = asyncErrorHandler(async (req, res) => {
       contactNo: normalizedContact,
       email: account.email,
       role: account.role,
-      ...(account.role === "seller" && { sellerApprovalStatus: account.sellerApprovalStatus }),
+      ...(account.role === "seller" && { status: account.status }),
     },
     smsSent: smsResult.success,
   });
@@ -223,6 +234,12 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
 
   // Mark account as verified and delete the OTP record
   account.isVerified = true;
+  
+  // Update seller status if this is a seller account
+  if (account.role === "seller") {
+    account.updateSellerStatus(true, account.status === "pending_otp");
+  }
+  
   await account.save();
   
   // Delete the used OTP
@@ -243,6 +260,10 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
     userData.address = account.address;
     userData.dateOfBirth = account.dateOfBirth;
   }
+  
+  if (account.role === "seller") {
+    userData.status = account.status;
+  }
 
   // For seller accounts, do NOT return a token
   if (account.role === "seller") {
@@ -251,7 +272,7 @@ const verifyOTP = asyncErrorHandler(async (req, res) => {
       message: "Account verified successfully. Your seller account will be reviewed by an administrator.",
       data: {
         user: userData,
-        sellerApprovalStatus: account.sellerApprovalStatus,
+        status: account.status,
       },
     });
   }
@@ -308,14 +329,14 @@ const login = asyncErrorHandler(async (req, res) => {
     throw err;
   }
 
-  // Check seller approval status for seller accounts
+  // Check seller status for seller accounts
   if (account.role === "seller") {
-    if (account.sellerApprovalStatus === "pending") {
+    if (account.status === "pending_otp" || account.status === "pending_admin" || account.status === "pending_otp_admin") {
       throw new UnauthenticatedError(
         "Your seller account is pending approval. Please wait for administrator review."
       );
     }
-    if (account.sellerApprovalStatus === "rejected") {
+    if (account.status === "rejected") {
       throw new UnauthenticatedError(
         "Your seller account has been rejected. Please contact support for more information."
       );

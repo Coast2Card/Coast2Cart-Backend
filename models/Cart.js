@@ -38,9 +38,11 @@ cartSchema.virtual("cartTotal").get(function () {
   }, 0);
 });
 
-// Virtual for item count
+// Virtual for item count (total quantity)
 cartSchema.virtual("itemCount").get(function () {
-  return this.items.length;
+  return this.items.reduce((total, cartItem) => {
+    return total + cartItem.quantity;
+  }, 0);
 });
 
 // Virtual for seller count

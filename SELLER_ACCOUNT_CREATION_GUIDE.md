@@ -90,7 +90,7 @@ The contact number should be in one of these formats (will be normalized automat
     "contactNo": "9154903863",
     "role": "seller",
     "isVerified": false,
-    "sellerApprovalStatus": "pending",
+    "status": "pending_otp_admin",
     "createdAt": "2025-10-14T10:30:00.000Z",
     "smsSent": true
   }
@@ -219,7 +219,7 @@ POST /api/auth/verify-otp
       "role": "seller",
       "isVerified": true
     },
-    "sellerApprovalStatus": "pending"
+    "status": "pending_admin"
   }
 }
 ```
@@ -352,7 +352,7 @@ PUT /api/accounts/sellers/:sellerId/approval
       "lastName": "Big",
       "username": "biggerboyrapi",
       "email": "rapi.test@gmail.com",
-      "sellerApprovalStatus": "approved",
+      "status": "validated",
       "approvedBy": "507f1f77bcf86cd799439012",
       "approvedAt": "2025-10-14T10:45:00.000Z"
     }
@@ -448,24 +448,24 @@ A seller account goes through these states:
 1. **Created (Unverified)**
 
    - `isVerified: false`
-   - `sellerApprovalStatus: "pending"`
+   - `status: "pending_otp_admin"`
    - Cannot login
 
 2. **Verified (Pending Approval)**
 
    - `isVerified: true`
-   - `sellerApprovalStatus: "pending"`
+   - `status: "pending_admin"`
    - Cannot login (needs admin approval)
 
 3. **Approved**
 
    - `isVerified: true`
-   - `sellerApprovalStatus: "approved"`
+   - `status: "validated"`
    - Can login
 
 4. **Rejected**
    - `isVerified: true`
-   - `sellerApprovalStatus: "rejected"`
+   - `status: "rejected"`
    - Cannot login
 
 ---

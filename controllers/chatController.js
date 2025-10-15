@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const ChatRoom = require("../models/ChatRoom");
 const Message = require("../models/Message");
 const Accounts = require("../models/Accounts");
@@ -9,6 +10,11 @@ const {
   NotFoundError,
   UnauthorizedError,
 } = require("../errors");
+const {
+  removeItemFromUserCart,
+  updateCartQuantitiesForReducedStock,
+  cleanupCartsForInactiveItem,
+} = require("../services/cartCleanupService");
 
 // Create or get chat room between two users
 const createOrGetChatRoom = async (req, res) => {
@@ -43,6 +49,14 @@ const createOrGetChatRoom = async (req, res) => {
     }
   }
 
+  // Validate quantity if provided
+  if (quantity !== undefined && (quantity <= 0 || !Number.isFinite(quantity))) {
+    throw new BadRequestError("Quantity must be a positive number");
+  }
+
+  // Set default quantity to 1 if not provided
+  const requestedQuantity = quantity || 1;
+
   // Check if chat room already exists
   let chatRoom = await ChatRoom.findOne({
     participants: { $all: [userId, participantId] },
@@ -54,6 +68,8 @@ const createOrGetChatRoom = async (req, res) => {
     chatRoom = new ChatRoom({
       participants: [userId, participantId],
       itemId: itemId || null,
+      requestedQuantity: requestedQuantity,
+      requestedUnit: item ? item.unit : null,
       unreadCount: new Map([
         [userId, 0],
         [participantId, 0],

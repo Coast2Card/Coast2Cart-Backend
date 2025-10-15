@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { body, param, query } = require("express-validator");
-const { authenticateToken } = require("../middleware/auth");
+const { authenticateToken, authorizeRoles } = require("../middleware/auth");
 const asyncHandler = require("../middleware/asyncErrorHandler");
 const {
   createOrGetChatRoom,
@@ -86,6 +86,12 @@ const validatePagination = [
     .optional()
     .isInt({ min: 1, max: 100 })
     .withMessage("Limit must be between 1 and 100"),
+];
+
+const validateUpdateQuantity = [
+  body("quantity")
+    .isFloat({ min: 0.01 })
+    .withMessage("Quantity must be a positive number"),
 ];
 
 // Routes
