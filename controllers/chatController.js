@@ -608,6 +608,20 @@ const markTransactionAsSold = async (req, res) => {
   transaction.markedSoldBy = userId;
   await transaction.save();
 
+  // Clean up carts after sale
+  try {
+    // Remove the sold item from the buyer's cart
+    await removeItemFromUserCart(transaction.itemId, transaction.buyerId, 'sold');
+
+    // Only remove from all carts if item is completely sold out
+    if (item.quantity <= 0) {
+      await cleanupCartsForInactiveItem(transaction.itemId);
+    }
+  } catch (cartCleanupError) {
+    console.error('Cart cleanup error during chat transaction sale:', cartCleanupError);
+    // Don't fail the sale if cart cleanup fails
+  }
+
   // Send automatic system message in chat
   const systemMessage = new Message({
     chatRoomId: chatRoom._id,
