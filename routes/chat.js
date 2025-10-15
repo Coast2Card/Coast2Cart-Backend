@@ -11,8 +11,9 @@ const {
   markMessagesAsRead,
   deleteMessage,
   getChatRoomDetails,
-  markItemAsSold,
-  updateRequestedQuantity,
+  getChatTransactions,
+  addTransactionToChatRoom,
+  markTransactionAsSold,
 } = require("../controllers/chatController");
 
 // Authentication middleware will be applied to individual routes
@@ -28,7 +29,24 @@ const validateCreateChatRoom = [
   body("quantity")
     .optional()
     .isFloat({ min: 0.01 })
-    .withMessage("Quantity must be a positive number"),
+    .withMessage("Quantity must be greater than 0"),
+];
+
+const validateAddTransaction = [
+  body("itemId")
+    .notEmpty()
+    .withMessage("Item ID is required")
+    .isMongoId()
+    .withMessage("Invalid item ID"),
+  body("quantity")
+    .notEmpty()
+    .withMessage("Quantity is required")
+    .isFloat({ min: 0.01 })
+    .withMessage("Quantity must be greater than 0"),
+];
+
+const validateTransactionId = [
+  param("transactionId").isMongoId().withMessage("Invalid transaction ID"),
 ];
 
 const validateSendMessage = [
@@ -171,29 +189,41 @@ router.delete(
 );
 
 /**
- * @route   POST /api/chat/rooms/:chatRoomId/mark-sold
- * @desc    Mark item as sold in chat room (uses stored requested quantity)
- * @access  Private (Seller only)
+ * @route   GET /api/chat/rooms/:chatRoomId/transactions
+ * @desc    Get all transactions for a chat room
+ * @access  Private
  */
-router.post(
-  "/rooms/:chatRoomId/mark-sold",
+router.get(
+  "/rooms/:chatRoomId/transactions",
   authenticateToken,
-  authorizeRoles("seller"),
   ...validateChatRoomId,
-  asyncHandler(markItemAsSold)
+  asyncHandler(getChatTransactions)
 );
 
 /**
- * @route   PUT /api/chat/rooms/:chatRoomId/quantity
- * @desc    Update requested quantity in chat room
- * @access  Private (Buyer only)
+ * @route   POST /api/chat/rooms/:chatRoomId/transactions
+ * @desc    Add new transaction to existing chat room
+ * @access  Private
  */
-router.put(
-  "/rooms/:chatRoomId/quantity",
+router.post(
+  "/rooms/:chatRoomId/transactions",
   authenticateToken,
   ...validateChatRoomId,
-  ...validateUpdateQuantity,
-  asyncHandler(updateRequestedQuantity)
+  ...validateAddTransaction,
+  asyncHandler(addTransactionToChatRoom)
+);
+
+/**
+ * @route   PUT /api/chat/rooms/:chatRoomId/transactions/:transactionId/mark-sold
+ * @desc    Mark transaction as sold and update inventory
+ * @access  Private (Seller only)
+ */
+router.put(
+  "/rooms/:chatRoomId/transactions/:transactionId/mark-sold",
+  authenticateToken,
+  ...validateChatRoomId,
+  ...validateTransactionId,
+  asyncHandler(markTransactionAsSold)
 );
 
 module.exports = router;

@@ -3,7 +3,7 @@ const ChatRoom = require("../models/ChatRoom");
 const Message = require("../models/Message");
 const Accounts = require("../models/Accounts");
 const Item = require("../models/Item");
-const SoldItem = require("../models/SoldItem");
+const Transaction = require("../models/Transaction");
 const { StatusCodes } = require("http-status-codes");
 const {
   BadRequestError,
@@ -40,7 +40,7 @@ const createOrGetChatRoom = async (req, res) => {
     throw new NotFoundError("Participant not found");
   }
 
-  // Check if item exists (if provided) and get item details
+  // Fetch item if provided
   let item = null;
   if (itemId) {
     item = await Item.findById(itemId);
@@ -62,6 +62,7 @@ const createOrGetChatRoom = async (req, res) => {
     participants: { $all: [userId, participantId] },
   }).populate("participants", "username profilePicture");
 
+  let isNewChatRoom = false;
   if (!chatRoom) {
     // Create new chat room
     chatRoom = new ChatRoom({
@@ -77,29 +78,74 @@ const createOrGetChatRoom = async (req, res) => {
 
     await chatRoom.save();
     await chatRoom.populate("participants", "username profilePicture");
-  } else {
-    // Update existing chat room if new data is provided
-    let needsUpdate = false;
-    
-    if (itemId && !chatRoom.itemId) {
-      chatRoom.itemId = itemId;
-      chatRoom.requestedUnit = item ? item.unit : null;
-      needsUpdate = true;
+    isNewChatRoom = true;
+  }
+
+  // Create transaction if item and quantity are provided
+  let transaction = null;
+  if (itemId && quantity && item) {
+    // Validate quantity
+    if (quantity <= 0) {
+      throw new BadRequestError("Quantity must be greater than 0");
     }
-    
-    if (quantity !== undefined && chatRoom.requestedQuantity !== requestedQuantity) {
-      chatRoom.requestedQuantity = requestedQuantity;
-      needsUpdate = true;
+
+    if (quantity > item.quantity) {
+      throw new BadRequestError(
+        `Not enough stock available. Only ${item.quantity} ${item.unit} available.`
+      );
     }
-    
-    if (needsUpdate) {
-      await chatRoom.save();
-    }
+
+    // Create transaction
+    transaction = new Transaction({
+      chatRoomId: chatRoom._id,
+      itemId: item._id,
+      buyerId: userId,
+      sellerId: item.seller,
+      quantity: quantity,
+      unit: item.unit,
+      priceAtTransaction: item.itemPrice,
+      totalPrice: item.itemPrice * quantity,
+      status: "pending",
+    });
+
+    await transaction.save();
+    await transaction.populate("itemId", "itemName itemPrice image unit");
+
+    // Send automatic product message in chat
+    const productMessage = new Message({
+      chatRoomId: chatRoom._id,
+      senderId: userId,
+      messageType: "product",
+      content: {
+        product: {
+          productId: item._id,
+          name: item.itemName,
+          description: item.description,
+          price: `₱${item.itemPrice}/${item.unit}`,
+          image: item.image,
+        },
+        transactionId: transaction._id,
+        quantity: quantity,
+        totalPrice: transaction.totalPrice,
+      },
+    });
+
+    await productMessage.save();
+
+    // Update chat room last message
+    await ChatRoom.findByIdAndUpdate(chatRoom._id, {
+      lastMessage: `New order: ${quantity} ${item.unit} of ${item.itemName}`,
+      lastMessageAt: new Date(),
+    });
   }
 
   res.status(StatusCodes.OK).json({
     success: true,
-    data: chatRoom,
+    data: {
+      chatRoom,
+      transaction,
+      isNewChatRoom,
+    },
   });
 };
 
@@ -137,7 +183,13 @@ const getChatMessages = async (req, res) => {
 
   // Verify user is participant in this chat
   const chatRoom = await ChatRoom.findById(chatRoomId);
-  if (!chatRoom || !chatRoom.participants.includes(userId)) {
+  if (!chatRoom) {
+    throw new NotFoundError("Chat room not found");
+  }
+
+  // Check if user is participant (convert ObjectIds to strings for comparison)
+  const participantIds = chatRoom.participants.map((id) => id.toString());
+  if (!participantIds.includes(userId.toString())) {
     throw new UnauthorizedError("Not authorized to view this chat");
   }
 
@@ -184,7 +236,13 @@ const sendMessage = async (req, res) => {
 
   // Verify user is participant
   const chatRoom = await ChatRoom.findById(chatRoomId);
-  if (!chatRoom || !chatRoom.participants.includes(userId)) {
+  if (!chatRoom) {
+    throw new NotFoundError("Chat room not found");
+  }
+
+  // Check if user is participant (convert ObjectIds to strings for comparison)
+  const participantIds = chatRoom.participants.map((id) => id.toString());
+  if (!participantIds.includes(userId.toString())) {
     throw new UnauthorizedError("Not authorized to send message to this chat");
   }
 
@@ -248,7 +306,13 @@ const markMessagesAsRead = async (req, res) => {
 
   // Verify user is participant
   const chatRoom = await ChatRoom.findById(chatRoomId);
-  if (!chatRoom || !chatRoom.participants.includes(userId)) {
+  if (!chatRoom) {
+    throw new NotFoundError("Chat room not found");
+  }
+
+  // Check if user is participant (convert ObjectIds to strings for comparison)
+  const participantIds = chatRoom.participants.map((id) => id.toString());
+  if (!participantIds.includes(userId.toString())) {
     throw new UnauthorizedError("Not authorized to access this chat");
   }
 
@@ -305,7 +369,13 @@ const getChatRoomDetails = async (req, res) => {
     .populate("participants", "username profilePicture")
     .populate("itemId", "itemName itemPrice image");
 
-  if (!chatRoom || !chatRoom.participants.includes(userId)) {
+  if (!chatRoom) {
+    throw new NotFoundError("Chat room not found");
+  }
+
+  // Check if user is participant (convert ObjectIds to strings for comparison)
+  const participantIds = chatRoom.participants.map((id) => id.toString());
+  if (!participantIds.includes(userId.toString())) {
     throw new UnauthorizedError("Not authorized to view this chat room");
   }
 
@@ -315,242 +385,257 @@ const getChatRoomDetails = async (req, res) => {
   });
 };
 
-// Mark item as sold
-const markItemAsSold = async (req, res) => {
+// Get transactions for a chat room
+const getChatTransactions = async (req, res) => {
   const { chatRoomId } = req.params;
-  const userId = req.user.userId;
+  const userId = req.user?.userId || req.user?._id;
 
   // Verify user is participant in this chat
-  const chatRoom = await ChatRoom.findById(chatRoomId).populate("itemId");
-  if (!chatRoom || !chatRoom.participants.includes(userId)) {
-    throw new UnauthorizedError("Not authorized to access this chat");
-  }
-
-  // Check if chat room has an associated item
-  if (!chatRoom.itemId) {
-    throw new BadRequestError("This chat room is not associated with any item");
-  }
-
-  const item = chatRoom.itemId;
-
-  // Verify the user is the seller of the item
-  if (item.seller.toString() !== userId.toString()) {
-    throw new UnauthorizedError("Only the seller can mark items as sold");
-  }
-
-  // Get seller account details to check seller status
-  const sellerAccount = await Accounts.findById(userId);
-  if (!sellerAccount) {
-    throw new NotFoundError("Seller account not found");
-  }
-
-  // Verify seller status is validated (both OTP verified and admin approved)
-  if (sellerAccount.status !== "validated") {
-    throw new UnauthorizedError("Seller account must be fully validated to mark items as sold");
-  }
-
-  // Check if item is still active
-  if (!item.isActive) {
-    throw new BadRequestError("Cannot mark inactive items as sold");
-  }
-
-  // Use the requested quantity from the chat room
-  const quantitySold = chatRoom.requestedQuantity;
-
-  // Check if there's enough quantity available
-  if (item.quantity < quantitySold) {
-    throw new BadRequestError(
-      `Insufficient quantity. Available: ${item.quantity} ${item.unit}, Requested: ${quantitySold} ${item.unit}`
-    );
-  }
-
-  // Get the buyer (the other participant in the chat room)
-  const buyerId = chatRoom.participants.find(participantId => 
-    participantId.toString() !== userId.toString()
-  );
-
-  if (!buyerId) {
-    throw new BadRequestError("Could not identify buyer in chat room");
-  }
-
-  // Calculate total amount
-  const totalAmount = item.itemPrice * quantitySold;
-
-  // Start transaction to ensure data consistency
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    // Create SoldItem record
-    const soldItem = new SoldItem({
-      item: item._id,
-      seller: userId,
-      buyer: buyerId,
-      itemType: item.itemType,
-      itemName: item.itemName,
-      itemPrice: item.itemPrice,
-      quantitySold: quantitySold,
-      unit: item.unit,
-      totalAmount: totalAmount,
-      image: item.image,
-      imagePublicId: item.imagePublicId,
-    });
-
-    await soldItem.save({ session });
-
-    // Update item quantity
-    const updatedItem = await Item.findByIdAndUpdate(
-      item._id,
-      { $inc: { quantity: -quantitySold } },
-      { new: true, session }
-    );
-
-    // Create a "sold" message in the chat
-    const soldMessage = new Message({
-      chatRoomId,
-      senderId: userId,
-      messageType: "text",
-      content: {
-        text: `✅ Item marked as sold: ${quantitySold} ${item.unit} of ${item.itemName} for ₱${(item.itemPrice * quantitySold).toFixed(2)}. Remaining quantity: ${updatedItem.quantity} ${item.unit}`,
-      },
-    });
-
-    await soldMessage.save({ session });
-    await soldMessage.populate("senderId", "username profilePicture");
-
-    // Update chat room last message
-    await ChatRoom.findByIdAndUpdate(
-      chatRoomId,
-      {
-        lastMessage: `Sold: ${quantitySold} ${item.unit} of ${item.itemName}`,
-        lastMessageAt: new Date(),
-      },
-      { session }
-    );
-
-    // Commit transaction
-    await session.commitTransaction();
-
-    // Clean up carts after sale (outside transaction to avoid conflicts)
-    try {
-      // Remove the sold item from the buyer's cart
-      await removeItemFromUserCart(item._id.toString(), buyerId.toString(), 'sold');
-      
-      // Only remove from all carts if item is completely sold out
-      if (updatedItem.quantity <= 0) {
-        await cleanupCartsForInactiveItem(item._id.toString());
-      }
-    } catch (cartCleanupError) {
-      console.error('Cart cleanup error during item sale:', cartCleanupError);
-      // Don't fail the sale if cart cleanup fails
-    }
-
-    res.status(StatusCodes.OK).json({
-      success: true,
-      message: "Item marked as sold successfully",
-      data: {
-        soldQuantity: quantitySold,
-        remainingQuantity: updatedItem.quantity,
-        totalPrice: totalAmount,
-        soldItem: {
-          _id: soldItem._id,
-          itemName: soldItem.itemName,
-          quantitySold: soldItem.quantitySold,
-          unit: soldItem.unit,
-          totalAmount: soldItem.totalAmount,
-          saleDate: soldItem.saleDate,
-        },
-        soldMessage: soldMessage,
-        updatedItem: {
-          _id: updatedItem._id,
-          itemName: updatedItem.itemName,
-          quantity: updatedItem.quantity,
-          unit: updatedItem.unit,
-        },
-      },
-    });
-  } catch (error) {
-    // Rollback transaction on error
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    session.endSession();
-  }
-};
-
-// Update requested quantity in chat room
-const updateRequestedQuantity = async (req, res) => {
-  const { chatRoomId } = req.params;
-  const { quantity } = req.body;
-  const userId = req.user.userId;
-
-  // Validate inputs
-  if (!quantity || quantity <= 0) {
-    throw new BadRequestError("Valid quantity is required");
-  }
-
-  // Get chat room with item details
-  const chatRoom = await ChatRoom.findById(chatRoomId).populate("itemId");
+  const chatRoom = await ChatRoom.findById(chatRoomId);
   if (!chatRoom) {
     throw new NotFoundError("Chat room not found");
   }
 
+  // Check if user is participant (convert ObjectIds to strings for comparison)
+  const participantIds = chatRoom.participants.map((id) => id.toString());
+  if (!participantIds.includes(userId.toString())) {
+    throw new UnauthorizedError("Not authorized to view this chat");
+  }
+
+  const transactions = await Transaction.find({ chatRoomId })
+    .populate("itemId", "itemName itemPrice image unit quantity")
+    .populate("buyerId", "username profilePicture")
+    .populate("sellerId", "username profilePicture")
+    .sort({ createdAt: -1 });
+
+  res.status(StatusCodes.OK).json({
+    success: true,
+    data: transactions,
+  });
+};
+
+// Add new transaction to existing chat room
+const addTransactionToChatRoom = async (req, res) => {
+  const { chatRoomId } = req.params;
+  const { itemId, quantity } = req.body;
+  const userId = req.user?.userId || req.user?._id;
+
+  // Validate inputs
+  if (!itemId || !quantity) {
+    throw new BadRequestError("Item ID and quantity are required");
+  }
+
+  if (!userId) {
+    throw new UnauthorizedError("User authentication failed");
+  }
+
   // Verify user is participant in this chat
-  if (!chatRoom.participants.includes(userId)) {
-    throw new UnauthorizedError("Not authorized to access this chat");
+  const chatRoom = await ChatRoom.findById(chatRoomId);
+  if (!chatRoom) {
+    throw new NotFoundError("Chat room not found");
   }
 
-  // Check if chat room has an associated item
-  if (!chatRoom.itemId) {
-    throw new BadRequestError("This chat room is not associated with any item");
-  }
-
-  const item = chatRoom.itemId;
-
-  // Check if requested quantity exceeds available quantity
-  if (quantity > item.quantity) {
-    throw new BadRequestError(
-      `Requested quantity (${quantity} ${item.unit}) exceeds available quantity (${item.quantity} ${item.unit})`
+  // Check if user is participant (convert ObjectIds to strings for comparison)
+  const participantIds = chatRoom.participants.map((id) => id.toString());
+  if (!participantIds.includes(userId.toString())) {
+    throw new UnauthorizedError(
+      "Not authorized to add transaction to this chat"
     );
   }
 
-  // Update the requested quantity
-  const oldQuantity = chatRoom.requestedQuantity;
-  chatRoom.requestedQuantity = quantity;
-  await chatRoom.save();
+  // Fetch item
+  const item = await Item.findById(itemId);
+  if (!item) {
+    throw new NotFoundError("Item not found");
+  }
 
-  // Create a message documenting the quantity change
-  const quantityMessage = new Message({
-    chatRoomId,
+  // Validate quantity
+  if (quantity <= 0) {
+    throw new BadRequestError("Quantity must be greater than 0");
+  }
+
+  if (quantity > item.quantity) {
+    throw new BadRequestError(
+      `Not enough stock available. Only ${item.quantity} ${item.unit} available.`
+    );
+  }
+
+  // Determine buyer and seller
+  const otherParticipant = chatRoom.participants.find(
+    (p) => p.toString() !== userId.toString()
+  );
+
+  const isBuyer = item.seller.toString() !== userId.toString();
+  const buyerId = isBuyer ? userId : otherParticipant;
+  const sellerId = isBuyer ? otherParticipant : userId;
+
+  // Create transaction
+  const transaction = new Transaction({
+    chatRoomId: chatRoom._id,
+    itemId: item._id,
+    buyerId: buyerId,
+    sellerId: sellerId,
+    quantity: quantity,
+    unit: item.unit,
+    priceAtTransaction: item.itemPrice,
+    totalPrice: item.itemPrice * quantity,
+    status: "pending",
+  });
+
+  await transaction.save();
+  await transaction.populate("itemId", "itemName itemPrice image unit");
+
+  // Send automatic product message in chat
+  const productMessage = new Message({
+    chatRoomId: chatRoom._id,
     senderId: userId,
-    messageType: "text",
+    messageType: "product",
     content: {
-      text: `📝 Updated requested quantity from ${oldQuantity} ${item.unit} to ${quantity} ${item.unit}`,
+      product: {
+        productId: item._id,
+        name: item.itemName,
+        description: item.description,
+        price: `₱${item.itemPrice}/${item.unit}`,
+        image: item.image,
+      },
+      transactionId: transaction._id,
+      quantity: quantity,
+      totalPrice: transaction.totalPrice,
     },
   });
 
-  await quantityMessage.save();
-  await quantityMessage.populate("senderId", "username profilePicture");
+  await productMessage.save();
 
   // Update chat room last message
-  await ChatRoom.findByIdAndUpdate(chatRoomId, {
-    lastMessage: `Updated quantity: ${quantity} ${item.unit}`,
+  await ChatRoom.findByIdAndUpdate(chatRoom._id, {
+    lastMessage: `New order: ${quantity} ${item.unit} of ${item.itemName}`,
+    lastMessageAt: new Date(),
+  });
+
+  res.status(StatusCodes.CREATED).json({
+    success: true,
+    data: transaction,
+  });
+};
+
+// Mark transaction as sold
+const markTransactionAsSold = async (req, res) => {
+  const { chatRoomId, transactionId } = req.params;
+  const userId = req.user?.userId || req.user?._id;
+
+  // Debug logging
+  console.log("=== DEBUG markTransactionAsSold ===");
+  console.log("chatRoomId:", chatRoomId);
+  console.log("transactionId:", transactionId);
+  console.log("userId:", userId);
+  console.log("req.user:", req.user);
+
+  // Validate user
+  if (!userId) {
+    throw new UnauthorizedError("User authentication failed");
+  }
+
+  // Verify user is participant in this chat
+  const chatRoom = await ChatRoom.findById(chatRoomId);
+  console.log("chatRoom:", chatRoom);
+  console.log("chatRoom.participants:", chatRoom?.participants);
+
+  if (!chatRoom) {
+    throw new NotFoundError("Chat room not found");
+  }
+
+  // Check if user is participant (convert ObjectIds to strings for comparison)
+  const participantIds = chatRoom.participants.map((id) => id.toString());
+  console.log("participantIds:", participantIds);
+  console.log("userId.toString():", userId.toString());
+  console.log("includes check:", participantIds.includes(userId.toString()));
+
+  if (!participantIds.includes(userId.toString())) {
+    console.log("❌ Authorization failed - user not in participants");
+    throw new UnauthorizedError("Not authorized to access this chat");
+  }
+
+  console.log("✅ Authorization passed");
+
+  // Fetch transaction
+  const transaction = await Transaction.findById(transactionId).populate(
+    "itemId"
+  );
+  console.log("transaction:", transaction);
+  console.log("transaction.sellerId:", transaction?.sellerId);
+  console.log("transaction.buyerId:", transaction?.buyerId);
+
+  if (!transaction) {
+    throw new NotFoundError("Transaction not found");
+  }
+
+  // Verify transaction belongs to this chat room
+  if (transaction.chatRoomId.toString() !== chatRoomId) {
+    throw new UnauthorizedError(
+      "Transaction does not belong to this chat room"
+    );
+  }
+
+  // Only seller can mark as sold
+  if (transaction.sellerId.toString() !== userId.toString()) {
+    throw new UnauthorizedError("Only seller can mark transaction as sold");
+  }
+
+  // Check if already sold
+  if (transaction.status === "sold") {
+    throw new BadRequestError("Transaction already marked as sold");
+  }
+
+  // Deduct stock from item
+  const item = await Item.findById(transaction.itemId);
+  if (!item) {
+    throw new NotFoundError("Item not found");
+  }
+
+  if (item.quantity < transaction.quantity) {
+    throw new BadRequestError(
+      `Insufficient stock. Current stock: ${item.quantity} ${item.unit}`
+    );
+  }
+
+  // Update item quantity
+  item.quantity -= transaction.quantity;
+  await item.save();
+
+  // Update transaction status
+  transaction.status = "sold";
+  transaction.markedSoldAt = new Date();
+  transaction.markedSoldBy = userId;
+  await transaction.save();
+
+  // Send automatic system message in chat
+  const systemMessage = new Message({
+    chatRoomId: chatRoom._id,
+    senderId: userId,
+    messageType: "text",
+    content: {
+      text: `✅ Marked as sold: ${transaction.quantity} ${
+        transaction.unit
+      } of ${item.itemName}. Stock updated: ${
+        item.quantity + transaction.quantity
+      } → ${item.quantity} ${item.unit}`,
+    },
+  });
+
+  await systemMessage.save();
+
+  // Update chat room last message
+  await ChatRoom.findByIdAndUpdate(chatRoom._id, {
+    lastMessage: `Transaction completed: ${transaction.quantity} ${transaction.unit} of ${item.itemName}`,
     lastMessageAt: new Date(),
   });
 
   res.status(StatusCodes.OK).json({
     success: true,
-    message: "Requested quantity updated successfully",
     data: {
-      oldQuantity,
-      newQuantity: quantity,
-      unit: item.unit,
-      quantityMessage: quantityMessage,
-      updatedChatRoom: {
-        _id: chatRoom._id,
-        requestedQuantity: quantity,
-        requestedUnit: item.unit,
-      },
+      transaction,
+      updatedStock: item.quantity,
+      message: "Transaction marked as sold and stock updated successfully",
     },
   });
 };
@@ -563,6 +648,7 @@ module.exports = {
   markMessagesAsRead,
   deleteMessage,
   getChatRoomDetails,
-  markItemAsSold,
-  updateRequestedQuantity,
+  getChatTransactions,
+  addTransactionToChatRoom,
+  markTransactionAsSold,
 };

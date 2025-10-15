@@ -34,6 +34,12 @@ const messageSchema = new mongoose.Schema(
         price: String,
         image: String,
       },
+      transactionId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Transaction",
+      },
+      quantity: Number,
+      totalPrice: Number,
       imageUrl: {
         type: String,
         required: function () {
